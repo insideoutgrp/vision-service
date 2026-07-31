@@ -23,7 +23,9 @@ will sit alongside it under the same root.
 ```
 
 Deploy (self-updating one-liner; safe to re-run; migrates legacy
-`/home/pi/wittypi` installs automatically, preserving all per-device state):
+`/home/pi/wittypi` installs automatically — all per-device state is carried
+over, cron entries and the boot launcher are repointed, and the old install
+is removed once the copy is verified):
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/insideoutgrp/vision-service/main/Software/deploy.sh | sudo bash

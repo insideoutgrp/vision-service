@@ -22,13 +22,18 @@ version string.
 - Install target moved from `/home/pi/wittypi` to `/home/pi/vision/wittypi`
   (`VISION_HOME=/home/pi/vision` service root; future modules sit alongside)
 - `deploy.sh` retargeted at the visIOn repository (`main` branch) and now
-  **migrates legacy `/home/pi/wittypi` installs automatically**: full-tree
-  copy preserves all per-device state (`schedule.wpi`, `buttonRelay.conf`,
-  logs, `.net_*` watchdog state, hooks, backups); the old tree is kept as
-  `wittypi.pre-vision`
-- `/etc/init.d/wittypi` is regenerated idempotently on every deploy (before
-  the version gate), healing stale launcher paths after migration or an
-  interrupted deploy
+  **migrates legacy `/home/pi/wittypi` installs automatically**: legacy
+  daemon and children stopped (by pidfile and by path), full-tree copy
+  preserves all per-device state (`schedule.wpi`, `buttonRelay.conf`, logs,
+  `.net_*` watchdog state, hooks, backups), and the legacy install is
+  **removed** after the copy is diff-verified (kept as
+  `wittypi.pre-vision` only if verification fails); leftover remnants are
+  reported for manual attention
+- `/etc/init.d/wittypi` **and the cron entries** (time sync + connectivity
+  watchdog) are regenerated idempotently on every deploy, before the
+  version gate — a migrated or interrupted device is healed even when the
+  software version is already current (previously stale legacy-path cron
+  entries would have silently disabled time sync and the watchdog)
 - `install.sh` anchors at `$VISION_HOME` regardless of invocation directory
 - Upstream UUGear Web Interface (UWI) install step removed from `install.sh`
   — headless field devices; third-party curl-to-bash at provisioning was

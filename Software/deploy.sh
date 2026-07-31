@@ -8,7 +8,8 @@
 # Installs/updates the runtime at /home/pi/vision/wittypi. Devices still on
 # the legacy /home/pi/wittypi layout are migrated automatically: all
 # per-device state (schedule.wpi, buttonRelay.conf, logs, watchdog state)
-# is carried over and the old directory is kept as wittypi.pre-vision.
+# is carried over, cron entries and /etc/init.d/wittypi are repointed, and
+# the old install is removed once the copy is verified.
 #
 
 set -e
@@ -129,9 +130,15 @@ echo ''
 # Full-tree copy so all per-device state (schedule.wpi, buttonRelay.conf,
 # logs, .net_* watchdog state, hook scripts, backups) carries over; the
 # normal update path below then brings the scripts to the target version.
-# Re-runnable: once $VISION_HOME/wittypi exists the block is skipped.
+# After a verified copy the legacy install is REMOVED so nothing can ever
+# launch or write to the old path again. Re-runnable: once
+# $VISION_HOME/wittypi exists the block is skipped.
+# candidate legacy locations (deduplicated - both are the same path when
+# the target user is pi)
+LEGACY_CANDIDATES="$TARGET_HOME/wittypi"
+[ "$TARGET_HOME" != "/home/pi" ] && LEGACY_CANDIDATES="$LEGACY_CANDIDATES /home/pi/wittypi"
 LEGACY_DIR=""
-for d in "$TARGET_HOME/wittypi" /home/pi/wittypi; do
+for d in $LEGACY_CANDIDATES; do
   if [ -d "$d" ] && [ -f "$d/utilities.sh" ]; then
     LEGACY_DIR="$d"
     break
@@ -140,26 +147,55 @@ done
 if [ ! -d "$VISION_HOME/wittypi" ] && [ -n "$LEGACY_DIR" ]; then
   echo ">>> Migrating legacy installation: $LEGACY_DIR -> $VISION_HOME/wittypi"
   # stop the legacy daemon and any background children before copying, so
-  # nothing keeps writing into the old tree (or the I2C registers) mid-move
+  # nothing keeps writing into the old tree (or the I2C registers) mid-move.
+  # The daemon is killed by pidfile AND by path - the pidfile can be stale
+  # or missing after an unclean power cut.
   if [ -f /var/run/wittypi_daemon.pid ]; then
     OLD_PID=$(cat /var/run/wittypi_daemon.pid 2>/dev/null)
     if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
       kill "$OLD_PID" 2>/dev/null || true
     fi
   fi
+  pkill -f "$LEGACY_DIR/daemon.sh" 2>/dev/null || true
   pkill -f "$LEGACY_DIR/runScript.sh" 2>/dev/null || true
   pkill -f "$LEGACY_DIR/buttonRelay.sh" 2>/dev/null || true
+  # drop legacy cron entries immediately so cron cannot spawn the old
+  # scripts mid-migration (the current entries are re-installed below)
+  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh') | crontab - || true
   sleep 1
   mkdir -p "$VISION_HOME"
   cp -a "$LEGACY_DIR" "$VISION_HOME/wittypi"
-  # keep the old tree as an on-device backup, renamed out of the detection
-  # path; timestamp-suffix if a previous migration attempt left one behind
-  # (mv into an existing directory would nest instead of rename)
-  LEGACY_BACKUP="${LEGACY_DIR}.pre-vision"
-  [ -e "$LEGACY_BACKUP" ] && LEGACY_BACKUP="${LEGACY_BACKUP}_$(date +%Y%m%d_%H%M%S)"
-  mv "$LEGACY_DIR" "$LEGACY_BACKUP"
-  echo "  Legacy tree kept at $LEGACY_BACKUP"
+  # verify the copy before deleting the original; one re-copy attempt in
+  # case something appended to a log between copy and verify
+  if ! diff -rq "$LEGACY_DIR" "$VISION_HOME/wittypi" >/dev/null 2>&1; then
+    rm -rf "$VISION_HOME/wittypi"
+    cp -a "$LEGACY_DIR" "$VISION_HOME/wittypi"
+  fi
+  if diff -rq "$LEGACY_DIR" "$VISION_HOME/wittypi" >/dev/null 2>&1; then
+    rm -rf "$LEGACY_DIR"
+    echo "  State copied and verified; legacy install $LEGACY_DIR removed."
+  else
+    # copy could not be verified - keep the original out of the way rather
+    # than deleting data; the vision tree is still the live install
+    LEGACY_BACKUP="${LEGACY_DIR}.pre-vision"
+    [ -e "$LEGACY_BACKUP" ] && LEGACY_BACKUP="${LEGACY_BACKUP}_$(date +%Y%m%d_%H%M%S)"
+    mv "$LEGACY_DIR" "$LEGACY_BACKUP"
+    echo "  WARN: copy verification failed; legacy tree kept at $LEGACY_BACKUP"
+    echo "        (inspect and remove manually once satisfied)"
+  fi
 fi
+
+# report any leftover legacy remnants that were NOT auto-removed (a second
+# install under a different home, or a .pre-vision backup from a failed
+# verification) - flagged for manual attention rather than deleted blind
+for d in $LEGACY_CANDIDATES; do
+  if [ -d "$VISION_HOME/wittypi" ] && [ -d "$d" ] && [ -f "$d/utilities.sh" ]; then
+    echo "  WARN: another legacy install remains at $d - remove it manually."
+  fi
+  for b in "$d".pre-vision*; do
+    [ -d "$b" ] && echo "  NOTE: old migration backup present at $b (safe to remove)."
+  done
+done
 
 # detect existing installation (visIOn layout)
 WITTYPI_DIR=""
@@ -167,16 +203,30 @@ if [ -d "$VISION_HOME/wittypi" ] && [ -f "$VISION_HOME/wittypi/utilities.sh" ]; 
   WITTYPI_DIR="$VISION_HOME/wittypi"
 fi
 
-# regenerate the boot launcher whenever an installation is present. This is
-# idempotent and runs BEFORE the version gate so a freshly-migrated device
-# (or one whose deploy was interrupted between copy and init.d rewrite) is
-# healed even when the software version is already current. Without this,
-# /etc/init.d/wittypi could still point at the removed legacy path and the
-# device would boot with no daemon - no alarms, no time sync.
+# regenerate the boot launcher and cron entries whenever an installation is
+# present. This is idempotent and runs BEFORE the version gate so a
+# freshly-migrated device (or one whose deploy was interrupted midway) is
+# healed even when the software version is already current. Without this:
+# - /etc/init.d/wittypi could still point at the removed legacy path and
+#   the device would boot with no daemon - no alarms, no time sync
+# - the root crontab could still run the legacy-path syncTime.sh /
+#   checkInternet.sh, i.e. no time sync and no connectivity watchdog
 if [ -n "$WITTYPI_DIR" ]; then
   sed -e "s#/home/pi/vision/wittypi#$WITTYPI_DIR#g" "$SRC_DIR/wittypi/init.sh" >/etc/init.d/wittypi
   chmod +x /etc/init.d/wittypi
   update-rc.d wittypi defaults >/dev/null 2>&1 || true
+
+  echo '>>> Setting up cron entries (time sync + connectivity watchdog)'
+  chmod +x "$WITTYPI_DIR/syncTime.sh" "$WITTYPI_DIR/checkInternet.sh" 2>/dev/null || true
+  CRON_CMD="$WITTYPI_DIR/syncTime.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
+  NET_CHECK_CMD="$WITTYPI_DIR/checkInternet.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
+  # remove any existing entries (whatever path they point at) then add the
+  # current ones; internet check offset so it never overlaps syncTime
+  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh'; \
+   echo "*/15 * * * * $CRON_CMD"; \
+   echo "7,22,37,52 * * * * $NET_CHECK_CMD") | crontab -
+  echo '  Cron set: time sync every 15 min; internet check at :07/:22/:37/:52.'
+  echo ''
 fi
 
 if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
@@ -295,22 +345,9 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
     echo '  No internet - RTC will be migrated on next sync.'
   fi
 
-  # set up cron job for periodic time sync
-  echo ''
-  echo '>>> Setting up periodic time sync'
-  CRON_CMD="$WITTYPI_DIR/syncTime.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
-  # remove any existing syncTime cron entry then add the current one
-  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh'; echo "*/15 * * * * $CRON_CMD") | crontab -
-  echo '  Cron job set: sync time every 15 minutes.'
-
-  # set up cron job for internet connectivity check (offset from syncTime)
-  echo ''
-  echo '>>> Setting up internet connectivity check'
-  NET_CHECK_CMD="$WITTYPI_DIR/checkInternet.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
-  (crontab -l 2>/dev/null | grep -vF 'checkInternet.sh'; echo "7,22,37,52 * * * * $NET_CHECK_CMD") | crontab -
-  echo '  Cron job set: check internet every 15 min (at :07/:22/:37/:52).'
-  # ensure the script is present and executable on device
-  chmod +x "$WITTYPI_DIR/checkInternet.sh" 2>/dev/null
+  # NOTE: cron entries (time sync + connectivity watchdog) are installed in
+  # the idempotent pre-version-gate block above, so they are refreshed even
+  # when the software is already at the target version.
 
   # Strip any gpio-shutdown dtoverlay configured for GPIO-4 from the boot
   # config. The Witty Pi button is hardwired to both PIN_BUTTON on the
