@@ -169,7 +169,7 @@ if [ ! -f "$VISION_HOME/utilities.sh" ] && [ -n "$LEGACY_DIR" ]; then
   pkill -f "$LEGACY_DIR/checkInternet.sh" 2>/dev/null || true
   # drop legacy cron entries immediately so cron cannot spawn the old
   # scripts mid-migration (the current entries are re-installed below)
-  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh') | crontab - || true
+  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh' | grep -vF 'logsettings') | crontab - || true
   sleep 1
   mkdir -p "$VISION_HOME"
   # contents copy (trailing /.) - the runtime lands directly in the
@@ -228,16 +228,21 @@ if [ -n "$WITTYPI_DIR" ]; then
   chmod +x /etc/init.d/wittypi
   update-rc.d wittypi defaults >/dev/null 2>&1 || true
 
-  echo '>>> Setting up cron entries (time sync + connectivity watchdog)'
-  chmod +x "$WITTYPI_DIR/syncTime.sh" "$WITTYPI_DIR/checkInternet.sh" 2>/dev/null || true
+  echo '>>> Setting up cron entries (time sync + connectivity watchdog + camera log)'
+  chmod +x "$WITTYPI_DIR/syncTime.sh" "$WITTYPI_DIR/checkInternet.sh" "$WITTYPI_DIR/camera.sh" 2>/dev/null || true
   CRON_CMD="$WITTYPI_DIR/syncTime.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
   NET_CHECK_CMD="$WITTYPI_DIR/checkInternet.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
+  CAM_LOG_CMD="$WITTYPI_DIR/camera.sh logsettings >> $WITTYPI_DIR/wittyPi.log 2>&1"
   # remove any existing entries (whatever path they point at) then add the
-  # current ones; internet check offset so it never overlaps syncTime
-  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh'; \
+  # current ones; all three offsets chosen so no two jobs ever coincide.
+  # The camera snapshot is date-guarded internally - it runs to completion
+  # once per day and is a no-op statefile read the rest of the time.
+  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh' | grep -vF 'logsettings'; \
    echo "*/15 * * * * $CRON_CMD"; \
-   echo "7,22,37,52 * * * * $NET_CHECK_CMD") | crontab -
-  echo '  Cron set: time sync every 15 min; internet check at :07/:22/:37/:52.'
+   echo "7,22,37,52 * * * * $NET_CHECK_CMD"; \
+   echo "5,20,35,50 * * * * $CAM_LOG_CMD") | crontab -
+  echo '  Cron set: time sync every 15 min; internet check at :07/:22/:37/:52;'
+  echo '            daily camera settings snapshot (attempts at :05/:20/:35/:50).'
   echo ''
 fi
 

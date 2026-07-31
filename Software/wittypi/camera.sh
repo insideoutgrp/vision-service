@@ -19,6 +19,8 @@
 #   camera.sh set <param> <value>   set a parameter (value or choice index)
 #   camera.sh focus           list the 9 focus points and frame size
 #   camera.sh focus <point> [af]    move the focus square (optionally AF there)
+#   camera.sh logsettings     daily settings snapshot to cameraSettings.log
+#                             (cron-driven; no-op if already logged today)
 #   camera.sh on | off        camera power relay control
 #
 # Notes:
@@ -109,9 +111,9 @@ RELAY_ACTIVE=1
 CAMERA_RELAY_PIN="${CAMERA_RELAY_PIN:-$RELAY_PIN}"
 RELAY_OFF=$((1 - RELAY_ACTIVE))
 
-CAMERA_USB_ID='04a9'        # Canon Inc. USB vendor id
-CAMERA_BOOT_TIMEOUT=25      # seconds to wait for USB enumeration after power-on
-GPHOTO2_TIMEOUT=30          # seconds per gphoto2 invocation (wedged PTP guard)
+CAMERA_USB_ID='04a9'                              # Canon Inc. USB vendor id
+CAMERA_BOOT_TIMEOUT="${CAMERA_BOOT_TIMEOUT:-25}"  # secs to wait for USB after power-on
+GPHOTO2_TIMEOUT="${GPHOTO2_TIMEOUT:-30}"          # secs per gphoto2 call (wedged PTP guard)
 
 camera_power_state()
 {
@@ -470,6 +472,80 @@ interactive_menu()
   done
 }
 
+# ------------------------------------------------------- daily settings log
+# One snapshot line per day in cameraSettings.log so drift in camera/lens
+# settings is visible over time (lens swap, knocked mode dial, changed ISO).
+# Cron calls this every 15 min; the date stamp makes all but the first
+# successful (or first failed) run of the day a no-op, so short wake
+# windows still get their snapshot without hourly relay cycling.
+SETTINGS_LOG="$cur_dir/cameraSettings.log"
+SETTINGS_STAMP="$cur_dir/.camera_log_date"
+
+settings_log_line()
+{
+  echo "[$(TZ=$LOCAL_TZ date +'%Y-%m-%d %H:%M:%S')] $1" >> "$SETTINGS_LOG"
+}
+
+# extract_val "<line>" <key>: value of key='...' in a snapshot line
+extract_val()
+{
+  echo " $1" | sed -n "s/.* $2='\([^']*\)'.*/\1/p"
+}
+
+do_logsettings()
+{
+  local today=$(TZ=$LOCAL_TZ date +%Y-%m-%d)
+  [ "$(cat "$SETTINGS_STAMP" 2>/dev/null)" = "$today" ] && exit 0
+  # stay out of the boot window (daemon startup, schedule engine)
+  local up=$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 999)
+  [ "$up" -lt 60 ] && exit 0   # no stamp - retry on the next cron tick
+  if ! hash gphoto2 2>/dev/null || ! hash gpio 2>/dev/null; then
+    echo "$today" > "$SETTINGS_STAMP"
+    settings_log_line 'WARN gphoto2/gpio not installed - no settings snapshot today.'
+    exit 0
+  fi
+  local prev_power=$(camera_power_state)
+  # on failure: stamp anyway, one failure line per day. Retrying hourly on
+  # a dead/absent camera would just cycle the relay and drain the battery.
+  if ! camera_power_on; then
+    echo "$today" > "$SETTINGS_STAMP"
+    settings_log_line 'WARN camera not detected on USB - no settings snapshot today.'
+    log 'Camera: daily settings snapshot skipped - camera not detected.'
+    [ "$prev_power" = "off" ] && camera_power_off
+    exit 0
+  fi
+  release_usb_claims
+  local model=$(timeout $GPHOTO2_TIMEOUT gphoto2 --auto-detect 2>/dev/null | sed -n '3p' | sed 's/  *usb.*//;s/  *$//')
+  local lens=$(get_config /main/status/lensname | sed -n 's/^Current: //p')
+  local batt=$(get_config /main/status/batterylevel | sed -n 's/^Current: //p')
+  local pairs="model='${model:-?}' lens='${lens:-?}'"
+  local n cur
+  for n in $(param_names); do
+    cur=$(get_config "$(param_path $n)" | sed -n 's/^Current: //p')
+    pairs="$pairs $n='${cur:-?}'"
+  done
+  # battery last and excluded from change detection - it drifts every day
+  settings_log_line "$pairs battery='${batt:-?}'"
+  echo "$today" > "$SETTINGS_STAMP"
+  log 'Camera: daily settings snapshot written to cameraSettings.log.'
+  # change detection vs the previous snapshot (ignore WARN/CHANGED lines)
+  local prev=$(grep " model='" "$SETTINGS_LOG" | tail -2 | head -1 | sed 's/^\[[^]]*\] //')
+  if [ -n "$prev" ] && [ "$(echo "$prev" | sed "s/ battery='[^']*'//")" != "$pairs" ]; then
+    local changed='' k pv cv
+    for k in model lens $(param_names); do
+      pv=$(extract_val "$prev" "$k")
+      cv=$(extract_val "$pairs" "$k")
+      [ "$pv" != "$cv" ] && changed="$changed $k:'$pv'->'$cv'"
+    done
+    if [ -n "$changed" ]; then
+      settings_log_line "CHANGED since previous snapshot:$changed"
+      log "Camera: settings changed since previous snapshot:$changed"
+    fi
+  fi
+  [ "$prev_power" = "off" ] && camera_power_off
+  exit 0
+}
+
 # ---------------------------------------------------------------- entry point
 case "$1" in
   '')       interactive_menu ;;
@@ -478,10 +554,11 @@ case "$1" in
   get)      do_get "$2" ;;
   set)      do_set "$2" "$3" ;;
   focus)    do_focus "$2" "$3" ;;
+  logsettings) do_logsettings ;;
   on)       ensure_camera_ready && echo '  Camera powered and ready.' ;;
   off)      camera_power_off ;;
   *)
-    echo "Usage: $0 [status|list|get <param>|set <param> <value>|focus [<point>] [af]|on|off]"
+    echo "Usage: $0 [status|list|get <param>|set <param> <value>|focus [<point>] [af]|logsettings|on|off]"
     echo "       $0            (no arguments: interactive menu)"
     exit 1
     ;;

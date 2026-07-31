@@ -310,6 +310,14 @@ NET_CHECK_CMD="$DIR/checkInternet.sh >> $DIR/wittyPi.log 2>&1"
 (crontab -l 2>/dev/null | grep -vF 'checkInternet.sh'; echo "7,22,37,52 * * * * $NET_CHECK_CMD") | crontab -
 echo '  Cron job set: check internet every 15 min (at :07/:22/:37/:52).'
 
+# set up cron job for the daily camera settings snapshot (date-guarded in
+# camera.sh - completes once per day, no-op statefile read otherwise;
+# offset from the other jobs)
+echo '>>> Setting up daily camera settings snapshot'
+CAM_LOG_CMD="$DIR/camera.sh logsettings >> $DIR/wittyPi.log 2>&1"
+(crontab -l 2>/dev/null | grep -vF 'logsettings'; echo "5,20,35,50 * * * * $CAM_LOG_CMD") | crontab -
+echo '  Cron job set: camera settings snapshot attempts at :05/:20/:35/:50.'
+
 # NOTE: the upstream UUGear Web Interface (UWI) install step was removed for
 # visIOn — these are headless, unattended field devices and piping a
 # third-party installer from the network at provisioning time is neither

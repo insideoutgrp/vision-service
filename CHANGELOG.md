@@ -14,6 +14,27 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### v5.40 — 2026-07-31
+**Daily camera-settings snapshot** (`camera.sh logsettings` + cron): one
+compact `key='value'` line per day in a separate **`cameraSettings.log`**
+so drift in camera/lens settings is visible over time (lens swap, knocked
+mode dial, changed ISO…).
+- Snapshot covers model, **lens name**, all 12 parameters, and battery
+  level; when any value (battery excluded — it always drifts) differs from
+  the previous snapshot, a `CHANGED` line names the keys and old→new
+  values, mirrored into wittyPi.log.
+- Cron attempts at :05/:20/:35/:50 with a date stamp
+  (`.camera_log_date`, Europe/London): devices wake on schedule, so a
+  fixed daily time would miss short wake windows; after the day's
+  snapshot every further tick is a no-op statefile read. 60 s uptime gate
+  keeps it out of the boot window.
+- Power-state restore: if the camera was off, it is powered off again
+  after the read — the logger never leaves the camera drawing power.
+- Failure handling: camera absent / gphoto2 missing writes one WARN line
+  and still stamps the day (no hourly relay cycling on a dead camera).
+- `cameraSettings.log` + `.camera_log_date` are per-device state (deploys
+  never touch them).
+
 ### v5.39 — 2026-07-31
 **Focus square selection** (`camera.sh focus <point> [af]`, plus an
 interactive-menu entry): moves the liveview focus square via

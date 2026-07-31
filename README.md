@@ -63,6 +63,22 @@ the relay, waits for the camera to enumerate on USB (`lsusb`, Canon vendor
 logged to `wittyPi.log`. Note the mode dial gates what is settable (e.g.
 aperture needs M/Av); read-only parameters are reported as such.
 
+**Daily settings log**: a cron job snapshots the full camera state (model,
+lens, all parameters, battery) **once per day** into
+`cameraSettings.log` — one `key='value'` line per day, with a `CHANGED`
+line naming any values that differ from the previous snapshot, so a lens
+swap or a knocked dial shows up in the log without visiting the site:
+
+```
+[2026-07-31 09:05:03] model='Canon EOS 1300D' lens='EF-S18-55mm f/3.5-5.6 IS II' iso='100' aperture='8' … battery='100%'
+[2026-08-01 09:05:02] model='Canon EOS 1300D' lens='EF-S18-55mm f/3.5-5.6 IS II' iso='100' aperture='5.6' … battery='96%'
+[2026-08-01 09:05:02] CHANGED since previous snapshot: aperture:'8'->'5.6'
+```
+
+If the camera was powered off, the logger powers it up for the read and
+back off afterwards. A camera that can't be reached writes one WARN line
+for that day rather than retrying (and cycling the relay) all day.
+
 Deploy (self-updating one-liner; safe to re-run; migrates legacy
 `/home/pi/wittypi` installs automatically — all per-device state is carried
 over, cron entries and the boot launcher are repointed, and the old install
