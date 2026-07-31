@@ -2,8 +2,10 @@
 
 Two Pi-software version lines are maintained in lockstep:
 
-- **v5.x** on branch `firmware-rev14` — requires firmware Rev 14+
-- **v4.x** on branch `main` — firmware-agnostic (Rev 7+)
+- **v5.x** — requires firmware Rev 14+; from v5.37 this line lives in the
+  **visIOn** repository (previously branch `firmware-rev14` of Witty-Pi-4)
+- **v4.x** — firmware-agnostic (Rev 7+); remains on branch `main` of the
+  legacy Witty-Pi-4 repository
 
 Where a fix applies to both, the pair is listed together. Firmware revisions
 have their own section at the end. Dates are commit dates.
@@ -11,6 +13,28 @@ have their own section at the end. Dates are commit dates.
 ---
 
 ## Pi software
+
+### v5.37 — 2026-07-31 (first visIOn release)
+Imported into the **visIOn** IoT endpoint management service as its
+power-management module. Packaging/layout only — **no runtime behaviour
+changes**; all scripts are self-locating and unchanged apart from the
+version string.
+- Install target moved from `/home/pi/wittypi` to `/home/pi/vision/wittypi`
+  (`VISION_HOME=/home/pi/vision` service root; future modules sit alongside)
+- `deploy.sh` retargeted at the visIOn repository (`main` branch) and now
+  **migrates legacy `/home/pi/wittypi` installs automatically**: full-tree
+  copy preserves all per-device state (`schedule.wpi`, `buttonRelay.conf`,
+  logs, `.net_*` watchdog state, hooks, backups); the old tree is kept as
+  `wittypi.pre-vision`
+- `/etc/init.d/wittypi` is regenerated idempotently on every deploy (before
+  the version gate), healing stale launcher paths after migration or an
+  interrupted deploy
+- `install.sh` anchors at `$VISION_HOME` regardless of invocation directory
+- Upstream UUGear Web Interface (UWI) install step removed from `install.sh`
+  — headless field devices; third-party curl-to-bash at provisioning was
+  unwanted
+- Lock (`/var/lock/wittypi.i2c.lock`), pidfiles, cron entries, log formats
+  and the `/etc/init.d/wittypi` service name are unchanged
 
 ### v5.36 / v4.52 — 2026-07-31
 Button-relay watcher hardening after field test: spawned via `setsid` with

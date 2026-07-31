@@ -1,9 +1,14 @@
 #!/bin/bash
 # file: deploy.sh
 #
-# One-liner deployment script for Witty Pi 4 DST fix (v4.24).
+# One-liner deployment script for the visIOn Witty Pi runtime.
 # Run on a Pi with:
-#   curl -sSL https://raw.githubusercontent.com/insideoutgrp/Witty-Pi-4/main/Software/deploy.sh | sudo bash
+#   curl -sSL https://raw.githubusercontent.com/insideoutgrp/visIOn/main/Software/deploy.sh | sudo bash
+#
+# Installs/updates the runtime at /home/pi/vision/wittypi. Devices still on
+# the legacy /home/pi/wittypi layout are migrated automatically: all
+# per-device state (schedule.wpi, buttonRelay.conf, logs, watchdog state)
+# is carried over and the old directory is kept as wittypi.pre-vision.
 #
 
 set -e
@@ -13,8 +18,9 @@ if [ "$(id -u)" != 0 ]; then
   exit 1
 fi
 
-REPO_URL="https://github.com/insideoutgrp/Witty-Pi-4"
-BRANCH="firmware-rev14"
+# NOTE: must match where this repository is hosted
+REPO_URL="https://github.com/insideoutgrp/visIOn"
+BRANCH="main"
 MIN_FW_REVISION=14   # firmware Rev 14 required for v5.1+ Pi software
 TMP_DIR=$(mktemp -d)
 
@@ -68,12 +74,12 @@ sync_schedules() {
 
 echo '================================================================================'
 echo '|                                                                              |'
-echo '|          Witty Pi 4 v5.1 (Rev14 firmware) - Remote Deploy                    |'
+echo '|          visIOn - Witty Pi runtime (Rev14+ firmware) - Remote Deploy         |'
 echo '|                                                                              |'
 echo '================================================================================'
 echo ''
-echo 'This branch requires firmware Revision 14 or later. Devices still on'
-echo 'older firmware must use the "main" branch instead.'
+echo 'This software requires firmware Revision 14 or later. Devices still on'
+echo 'older firmware must use the legacy Witty-Pi-4 "main" branch instead.'
 echo ''
 
 # Pre-flight firmware version check
@@ -92,27 +98,86 @@ if command -v i2cget >/dev/null 2>&1; then
   fi
 fi
 
-# detect existing installation
-WITTYPI_DIR=""
-if [ -d "$HOME/wittypi" ]; then
-  WITTYPI_DIR="$HOME/wittypi"
-elif [ -d "/home/pi/wittypi" ]; then
-  WITTYPI_DIR="/home/pi/wittypi"
-elif [ ! -z "$SUDO_USER" ] && [ -d "$(eval echo ~$SUDO_USER)/wittypi" ]; then
-  WITTYPI_DIR="$(eval echo ~$SUDO_USER)/wittypi"
+# resolve the visIOn service root for the target (non-root) user
+TARGET_USER="${SUDO_USER:-$(id -un)}"
+TARGET_HOME="$(eval echo "~${TARGET_USER}")"
+if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
+  TARGET_HOME='/home/pi'
 fi
+VISION_HOME="${VISION_HOME:-$TARGET_HOME/vision}"
 
 # download the repo
 echo ">>> Downloading from $REPO_URL"
-wget -q "$REPO_URL/archive/refs/heads/$BRANCH.tar.gz" -O "$TMP_DIR/wittypi.tar.gz" || {
+wget -q "$REPO_URL/archive/refs/heads/$BRANCH.tar.gz" -O "$TMP_DIR/vision.tar.gz" || {
   echo 'Error: Failed to download. Check your internet connection.'
   rm -rf "$TMP_DIR"
   exit 1
 }
-tar -xzf "$TMP_DIR/wittypi.tar.gz" -C "$TMP_DIR"
-SRC_DIR="$TMP_DIR/Witty-Pi-4-$BRANCH/Software"
+tar -xzf "$TMP_DIR/vision.tar.gz" -C "$TMP_DIR"
+# the tarball's top-level directory is <repo-name>-<branch>; derive it rather
+# than hard-coding the repo name
+SRC_DIR="$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)/Software"
+if [ ! -f "$SRC_DIR/wittypi/utilities.sh" ]; then
+  echo 'Error: downloaded archive does not contain Software/wittypi.'
+  rm -rf "$TMP_DIR"
+  exit 1
+fi
 echo '  Done.'
 echo ''
+
+# migrate a legacy /home/pi/wittypi installation into the visIOn layout.
+# Full-tree copy so all per-device state (schedule.wpi, buttonRelay.conf,
+# logs, .net_* watchdog state, hook scripts, backups) carries over; the
+# normal update path below then brings the scripts to the target version.
+# Re-runnable: once $VISION_HOME/wittypi exists the block is skipped.
+LEGACY_DIR=""
+for d in "$TARGET_HOME/wittypi" /home/pi/wittypi; do
+  if [ -d "$d" ] && [ -f "$d/utilities.sh" ]; then
+    LEGACY_DIR="$d"
+    break
+  fi
+done
+if [ ! -d "$VISION_HOME/wittypi" ] && [ -n "$LEGACY_DIR" ]; then
+  echo ">>> Migrating legacy installation: $LEGACY_DIR -> $VISION_HOME/wittypi"
+  # stop the legacy daemon and any background children before copying, so
+  # nothing keeps writing into the old tree (or the I2C registers) mid-move
+  if [ -f /var/run/wittypi_daemon.pid ]; then
+    OLD_PID=$(cat /var/run/wittypi_daemon.pid 2>/dev/null)
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+      kill "$OLD_PID" 2>/dev/null || true
+    fi
+  fi
+  pkill -f "$LEGACY_DIR/runScript.sh" 2>/dev/null || true
+  pkill -f "$LEGACY_DIR/buttonRelay.sh" 2>/dev/null || true
+  sleep 1
+  mkdir -p "$VISION_HOME"
+  cp -a "$LEGACY_DIR" "$VISION_HOME/wittypi"
+  # keep the old tree as an on-device backup, renamed out of the detection
+  # path; timestamp-suffix if a previous migration attempt left one behind
+  # (mv into an existing directory would nest instead of rename)
+  LEGACY_BACKUP="${LEGACY_DIR}.pre-vision"
+  [ -e "$LEGACY_BACKUP" ] && LEGACY_BACKUP="${LEGACY_BACKUP}_$(date +%Y%m%d_%H%M%S)"
+  mv "$LEGACY_DIR" "$LEGACY_BACKUP"
+  echo "  Legacy tree kept at $LEGACY_BACKUP"
+fi
+
+# detect existing installation (visIOn layout)
+WITTYPI_DIR=""
+if [ -d "$VISION_HOME/wittypi" ] && [ -f "$VISION_HOME/wittypi/utilities.sh" ]; then
+  WITTYPI_DIR="$VISION_HOME/wittypi"
+fi
+
+# regenerate the boot launcher whenever an installation is present. This is
+# idempotent and runs BEFORE the version gate so a freshly-migrated device
+# (or one whose deploy was interrupted between copy and init.d rewrite) is
+# healed even when the software version is already current. Without this,
+# /etc/init.d/wittypi could still point at the removed legacy path and the
+# device would boot with no daemon - no alarms, no time sync.
+if [ -n "$WITTYPI_DIR" ]; then
+  sed -e "s#/home/pi/vision/wittypi#$WITTYPI_DIR#g" "$SRC_DIR/wittypi/init.sh" >/etc/init.d/wittypi
+  chmod +x /etc/init.d/wittypi
+  update-rc.d wittypi defaults >/dev/null 2>&1 || true
+fi
 
 if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
   # --- UPDATE existing installation ---
@@ -304,17 +369,11 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
 else
   # --- FRESH installation ---
   echo '>>> No existing installation found. Running full install...'
-  # install.sh installs into ./wittypi relative to its working directory, so
-  # it must run from the target user's home -- NOT from inside the source
-  # checkout (which ships its own wittypi/ folder and would be mistaken for
-  # an existing install). WITTYPI_SRC points install.sh at the real source.
-  TARGET_USER="${SUDO_USER:-$(id -un)}"
-  TARGET_HOME="$(eval echo "~${TARGET_USER}")"
-  if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
-    TARGET_HOME='/home/pi'
-  fi
-  echo ">>> Installing Witty Pi software into $TARGET_HOME/wittypi"
-  ( cd "$TARGET_HOME" && WITTYPI_SRC="$SRC_DIR/wittypi" bash "$SRC_DIR/install.sh" )
+  # install.sh anchors itself at $VISION_HOME and installs the runtime into
+  # $VISION_HOME/wittypi; WITTYPI_SRC points it at the downloaded source so
+  # the checkout's own wittypi/ folder is never mistaken for an install.
+  echo ">>> Installing visIOn Witty Pi runtime into $VISION_HOME/wittypi"
+  WITTYPI_SRC="$SRC_DIR/wittypi" VISION_HOME="$VISION_HOME" bash "$SRC_DIR/install.sh"
 fi
 
 # cleanup

@@ -2,8 +2,9 @@
 #!/bin/bash
 # file: install.sh
 #
-# This script will install required software for Witty Pi.
-# It is recommended to run it in your home directory.
+# This script installs the visIOn Witty Pi power-management runtime and its
+# system dependencies. The install target is fixed at $VISION_HOME/wittypi
+# (default /home/pi/vision/wittypi) regardless of where it is run from.
 #
 
 # check if sudo is used
@@ -12,12 +13,21 @@ if [ "$(id -u)" != 0 ]; then
   exit 1
 fi
 
-# install target: the wittypi directory under the current working directory.
-# install.sh installs into ./wittypi relative to where it is launched, so the
-# caller is responsible for running it from the desired parent directory
-# (e.g. the user's home). This must NOT be derived from the script location,
-# otherwise installs run from a source checkout would target the checkout.
-DIR="$(pwd)/wittypi"
+# install target: the wittypi module inside the visIOn service root.
+# visIOn deploys as a unit to /home/pi/vision (override with VISION_HOME);
+# the Witty Pi power-management runtime lives at $VISION_HOME/wittypi and
+# future service modules sit alongside it. The target is deliberately NOT
+# derived from the script location, otherwise installs run from a source
+# checkout would target the checkout.
+VISION_HOME="${VISION_HOME:-/home/pi/vision}"
+DIR="$VISION_HOME/wittypi"
+# resolve the script's own directory BEFORE changing cwd - a relative
+# invocation path (e.g. `sudo bash Software/install.sh`) would resolve
+# wrongly after the cd below
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+mkdir -p "$VISION_HOME" || { echo "Cannot create $VISION_HOME"; exit 1; }
+# the rest of this script uses paths relative to the service root
+cd "$VISION_HOME" || exit 1
 
 # error counter
 ERR=0
@@ -130,7 +140,7 @@ fi
 # wittypi/ shipped alongside this script, but callers (e.g. deploy.sh) can
 # override it with WITTYPI_SRC so the source is never confused with the
 # install target ($DIR).
-SRC_DIR="${WITTYPI_SRC:-$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/wittypi}"
+SRC_DIR="${WITTYPI_SRC:-$SCRIPT_DIR/wittypi}"
 
 # scripts that carry the DST fix (v4.24)
 # v5.29: utilities.sh last - it carries SOFTWARE_VERSION, and copying it
@@ -220,7 +230,7 @@ if [ $ERR -eq 0 ]; then
       echo '  Syncing schedules...'
       sync_schedules "$SCHED_SRC" "wittypi/schedules"
 
-      chown -R $SUDO_USER:$(id -g -n $SUDO_USER) wittypi || ((ERR++))
+      chown -R $SUDO_USER:$(id -g -n $SUDO_USER) "$VISION_HOME" || ((ERR++))
 
       # restart daemon so new code takes effect
       if [ -f /var/run/wittypi_daemon.pid ]; then
@@ -254,10 +264,13 @@ if [ $ERR -eq 0 ]; then
       rm -rf wittypi
       cp -r "$SRC_DIR" wittypi || ((ERR++))
     else
-      # fallback: download from UUGear
-      wget https://www.uugear.com/repo/WittyPi4/LATEST -O wittyPi.zip || ((ERR++))
-      unzip wittyPi.zip -d wittypi || ((ERR++))
-      rm wittyPi.zip
+      # The upstream fallback (download stock software from UUGear) was
+      # removed for visIOn: stock software lacks every fork hardening
+      # (UTC RTC, DST engine, reliability registers, flock) and would
+      # silently degrade a field device. Fail loudly instead.
+      echo "ERROR: source tree not found at $SRC_DIR - nothing installed."
+      echo '       Run via Software/deploy.sh, or set WITTYPI_SRC.'
+      exit 1
     fi
     cd wittypi
     chmod +x wittyPi.sh
@@ -266,7 +279,7 @@ if [ $ERR -eq 0 ]; then
     chmod +x beforeScript.sh
     chmod +x afterStartup.sh
     chmod +x beforeShutdown.sh
-    sed -e "s#/home/pi/wittypi#$DIR#g" init.sh >/etc/init.d/wittypi
+    sed -e "s#/home/pi/vision/wittypi#$DIR#g" init.sh >/etc/init.d/wittypi
     chmod +x /etc/init.d/wittypi
     update-rc.d wittypi defaults || ((ERR++))
     touch wittyPi.log
@@ -276,7 +289,7 @@ if [ $ERR -eq 0 ]; then
     echo '  Syncing schedules...'
     sync_schedules "$SCHED_SRC" "schedules"
     cd ..
-    chown -R $SUDO_USER:$(id -g -n $SUDO_USER) wittypi || ((ERR++))
+    chown -R $SUDO_USER:$(id -g -n $SUDO_USER) "$VISION_HOME" || ((ERR++))
     sleep 2
   fi
 fi
@@ -295,8 +308,10 @@ NET_CHECK_CMD="$DIR/checkInternet.sh >> $DIR/wittyPi.log 2>&1"
 (crontab -l 2>/dev/null | grep -vF 'checkInternet.sh'; echo "7,22,37,52 * * * * $NET_CHECK_CMD") | crontab -
 echo '  Cron job set: check internet every 15 min (at :07/:22/:37/:52).'
 
-# install UUGear Web Interface
-curl https://www.uugear.com/repo/UWI/installUWI.sh | bash
+# NOTE: the upstream UUGear Web Interface (UWI) install step was removed for
+# visIOn — these are headless, unattended field devices and piping a
+# third-party installer from the network at provisioning time is neither
+# needed nor wanted. Install UWI manually if a bench device ever needs it.
 
 echo
 if [ $ERR -eq 0 ]; then

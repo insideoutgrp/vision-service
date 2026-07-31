@@ -1,10 +1,47 @@
-# Witty-Pi-4 (Inside Out Group fork)
+# visIOn
 
-Fork of [uugear/Witty-Pi-4](https://github.com/uugear/Witty-Pi-4), hardened for
-**unattended, field-deployed Raspberry Pi units** (3G/4G connected, UK sites,
-no physical access). The Witty Pi 4 HAT provides an RTC and full power
-management: it cuts and restores the Pi's power on a schedule, so reliability
-of the alarm/wake path is everything — a missed wake means a site visit.
+IoT endpoint management service for Inside Out Group **time-lapse cameras** —
+unattended, field-deployed Raspberry Pi units (3G/4G connected, UK sites, no
+physical access).
+
+The service deploys as a unit to **`/home/pi/vision`** on each device. Its
+first (and currently only) module is the Witty Pi 4 power-management runtime,
+imported from our hardened [uugear/Witty-Pi-4](https://github.com/uugear/Witty-Pi-4)
+fork; further device-management modules (capture, uplink, fleet telemetry)
+will sit alongside it under the same root.
+
+## On-device layout
+
+```
+/home/pi/vision/              service root (VISION_HOME)
+  install.sh                  copy of the installer (updated by deploy)
+  wittypi/                    power-management runtime (this repo: Software/wittypi/)
+    schedule.wpi              per-device state — active schedule (never overwritten)
+    buttonRelay.conf          per-device state — button→relay config
+    wittyPi.log, schedule.log diagnostic record
+    schedules/                deployed schedule catalogue (synced from Schedules/)
+```
+
+Deploy (self-updating one-liner; safe to re-run; migrates legacy
+`/home/pi/wittypi` installs automatically, preserving all per-device state):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/insideoutgrp/visIOn/main/Software/deploy.sh | sudo bash
+```
+
+Check the installed version on a device:
+
+```bash
+grep "SOFTWARE_VERSION" /home/pi/vision/wittypi/utilities.sh | head -1
+```
+
+---
+
+# Witty Pi power-management module
+
+The Witty Pi 4 HAT provides an RTC and full power management: it cuts and
+restores the Pi's power on a schedule, so reliability of the alarm/wake path
+is everything — a missed wake means a site visit.
 
 ## Documentation
 
@@ -19,28 +56,17 @@ of the alarm/wake path is everything — a missed wake means a site visit.
 
 ## Release tracks
 
-Two branches, one per firmware generation. The Pi-side software is kept in
-lockstep across both (same fixes, two version numbers).
+visIOn continues the **v5.x (firmware Rev 14+)** line of the Witty-Pi-4 fork
+— v5.37 is the first visIOn release. The deploy script refuses to install on
+firmware older than Rev 14 (Rev 15 = `0x0F` current, sketch in
+`Firmware/WittyPi4_v15/`).
 
-| Branch | Pi software | Firmware required | Use for |
-|---|---|---|---|
-| **`main`** | v4.52 | Any (Rev 7+) — firmware-agnostic | Devices in the field on stock or older firmware that cannot be reflashed remotely |
-| **`firmware-rev14`** | v5.36 | Rev 14+ (Rev 15 = `0x0F` current, sketch in `Firmware/WittyPi4_v15/`) | Devices flashed with our hardened firmware |
-
-Deploy (self-updating one-liner; safe to re-run, refuses to cross-deploy):
+Devices still on stock or older firmware that cannot be reflashed remotely
+stay on the legacy repo's firmware-agnostic **v4.x** line:
 
 ```bash
-# Older firmware in the field:
+# Legacy devices (firmware < Rev 14) only:
 curl -sSL https://raw.githubusercontent.com/insideoutgrp/Witty-Pi-4/main/Software/deploy.sh | sudo bash
-
-# Rev 14+ firmware:
-curl -sSL https://raw.githubusercontent.com/insideoutgrp/Witty-Pi-4/firmware-rev14/Software/deploy.sh | sudo bash
-```
-
-Check the installed version on a device:
-
-```bash
-grep "SOFTWARE_VERSION" /home/pi/wittypi/utilities.sh | head -1
 ```
 
 ## What this fork adds over upstream
