@@ -1,0 +1,350 @@
+[ -z $BASH ] && { exec bash "$0" "$@" || exit; }
+#!/bin/bash
+# file: camera.sh
+#
+# visIOn camera control: view and change capture parameters on the attached
+# Canon DSLR (EOS 1300D / 2000D) over USB via gphoto2.
+#
+# The camera has no independent power: it is fed through the relay driven
+# by the button->relay watcher (BCM 13 by default = physical pin 33 =
+# wiringPi 23, configured in buttonRelay.conf). Any camera operation must
+# therefore first energise the relay, then wait for the camera to enumerate
+# on USB (lsusb, Canon vendor 04a9) before issuing gphoto2 commands.
+#
+# Usage:
+#   camera.sh                 interactive menu (view + change parameters)
+#   camera.sh status          power/detection state + all current values
+#   camera.sh list            list supported parameter names
+#   camera.sh get <param>     show current value and available choices
+#   camera.sh set <param> <value>   set a parameter (value or choice index)
+#   camera.sh on | off        camera power relay control
+#
+# Notes:
+# - Choices are read live from the camera, not hard-coded: aperture depends
+#   on the fitted lens, and available ranges differ between bodies.
+# - The mode dial gates what is settable (e.g. aperture requires M/Av);
+#   read-only parameters are reported as such rather than half-applied.
+# - Power is left ON after get/set so scripted sequences don't power-cycle
+#   the camera per command; call `camera.sh off` when done.
+
+cur_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$cur_dir/utilities.sh"
+
+TIME_UNKNOWN=0
+
+# ---------------------------------------------------------------- parameters
+# name|gphoto2 config path|short description
+# Paths verified against Canon EOS 1300D / 2000D gphoto2 trees.
+PARAMS='
+iso|/main/imgsettings/iso|ISO speed
+aperture|/main/capturesettings/aperture|Aperture (f-number)
+shutter|/main/capturesettings/shutterspeed|Shutter speed
+expcomp|/main/capturesettings/exposurecompensation|Exposure compensation
+wb|/main/imgsettings/whitebalance|White balance
+format|/main/imgsettings/imageformat|Image format / quality
+metering|/main/capturesettings/meteringmode|Metering mode
+style|/main/capturesettings/picturestyle|Picture style
+drive|/main/capturesettings/drivemode|Drive mode
+focusmode|/main/capturesettings/focusmode|Focus mode
+target|/main/settings/capturetarget|Capture target (RAM / card)
+aemode|/main/capturesettings/autoexposuremode|Exposure mode (dial - usually read-only)
+'
+
+param_path()  { echo "$PARAMS" | grep "^$1|" | cut -d'|' -f2; }
+param_desc()  { echo "$PARAMS" | grep "^$1|" | cut -d'|' -f3; }
+param_names() { echo "$PARAMS" | grep -v '^$' | cut -d'|' -f1; }
+
+# ---------------------------------------------------------------- camera power
+# The camera is powered through the button->relay watcher's relay. Reuse its
+# per-device config so both features always agree on the pin and polarity;
+# CAMERA_RELAY_PIN in buttonRelay.conf overrides if the camera ever moves to
+# its own relay channel.
+RELAY_PIN=13
+RELAY_ACTIVE=1
+[ -f "$cur_dir/buttonRelay.conf" ] && . "$cur_dir/buttonRelay.conf"
+CAMERA_RELAY_PIN="${CAMERA_RELAY_PIN:-$RELAY_PIN}"
+RELAY_OFF=$((1 - RELAY_ACTIVE))
+
+CAMERA_USB_ID='04a9'        # Canon Inc. USB vendor id
+CAMERA_BOOT_TIMEOUT=25      # seconds to wait for USB enumeration after power-on
+GPHOTO2_TIMEOUT=30          # seconds per gphoto2 invocation (wedged PTP guard)
+
+camera_power_state()
+{
+  gpio -g mode $CAMERA_RELAY_PIN out 2>/dev/null
+  local level=$(gpio -g read $CAMERA_RELAY_PIN 2>/dev/null)
+  if [ "$level" = "$RELAY_ACTIVE" ]; then echo 'on'; else echo 'off'; fi
+}
+
+camera_usb_detected()
+{
+  lsusb 2>/dev/null | grep -qi "ID $CAMERA_USB_ID"
+}
+
+camera_power_on()
+{
+  gpio -g mode $CAMERA_RELAY_PIN out
+  if [ "$(camera_power_state)" = "on" ]; then
+    if camera_usb_detected; then
+      return 0
+    fi
+    # relay already energised but no camera on USB yet - fall through to wait
+  else
+    gpio -g write $CAMERA_RELAY_PIN $RELAY_ACTIVE
+    log "Camera: relay (BCM $CAMERA_RELAY_PIN) energised - powering camera up."
+  fi
+  local waited=0
+  while [ $waited -lt $CAMERA_BOOT_TIMEOUT ]; do
+    if camera_usb_detected; then
+      log "Camera: detected on USB after ${waited}s."
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  log "Camera: WARN - not detected on USB ${CAMERA_BOOT_TIMEOUT}s after power-on (relay BCM $CAMERA_RELAY_PIN active, lsusb shows no $CAMERA_USB_ID device)."
+  return 1
+}
+
+camera_power_off()
+{
+  gpio -g mode $CAMERA_RELAY_PIN out
+  gpio -g write $CAMERA_RELAY_PIN $RELAY_OFF
+  log "Camera: relay (BCM $CAMERA_RELAY_PIN) released - camera powered off."
+}
+
+# gvfs' gphoto2 volume monitor (desktop images only) grabs the camera the
+# moment it enumerates and gphoto2 then fails with "Could not claim the USB
+# device". Harmless no-op on Raspberry Pi OS Lite.
+release_usb_claims()
+{
+  pkill -f gvfs-gphoto2-volume-monitor 2>/dev/null || true
+  pkill -f gvfsd-gphoto2 2>/dev/null || true
+}
+
+# power on + verify gphoto2 can actually talk to the camera
+ensure_camera_ready()
+{
+  if ! hash gphoto2 2>/dev/null; then
+    echo 'ERROR: gphoto2 is not installed. Re-run the installation script.'
+    exit 1
+  fi
+  if ! hash gpio 2>/dev/null; then
+    echo 'ERROR: wiringPi (gpio) is not installed. Re-run the installation script.'
+    exit 1
+  fi
+  if ! camera_power_on; then
+    echo "ERROR: camera did not appear on USB within ${CAMERA_BOOT_TIMEOUT}s of relay power-on."
+    echo '       Check the relay wiring, camera power coupler and USB cable.'
+    exit 1
+  fi
+  release_usb_claims
+  if ! timeout $GPHOTO2_TIMEOUT gphoto2 --auto-detect 2>/dev/null | grep -qi usb; then
+    log 'Camera: WARN - on USB but gphoto2 --auto-detect does not list it.'
+    echo 'ERROR: camera is on USB but gphoto2 cannot see it (busy or unsupported?).'
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------- gphoto2 I/O
+# get_config <path>: prints the raw gphoto2 block (Label/Readonly/Current/
+# Choice lines) for one parameter
+get_config()
+{
+  timeout $GPHOTO2_TIMEOUT gphoto2 --get-config "$1" 2>/dev/null
+}
+
+# set_config <name> <path> <value>: resolves the value against the camera's
+# live choice list (exact match preferred, else a bare index), sets it, and
+# verifies by reading back. Returns non-zero with a message on any failure.
+set_config()
+{
+  local name="$1" path="$2" want="$3"
+  local block=$(get_config "$path")
+  if [ -z "$block" ]; then
+    echo "  ERROR: could not read $name from the camera."
+    return 1
+  fi
+  if echo "$block" | grep -q '^Readonly: 1'; then
+    echo "  $name is read-only right now (set by the mode dial on the camera)."
+    return 1
+  fi
+  local index=$(echo "$block" | sed -n "s/^Choice: \([0-9]*\) $(echo "$want" | sed 's/[]\/$*.^[]/\\&/g')\$/\1/p" | head -1)
+  if [ -z "$index" ] && [[ "$want" =~ ^[0-9]+$ ]]; then
+    # no choice text matched - accept a bare choice index
+    if echo "$block" | grep -q "^Choice: $want "; then
+      index="$want"
+    fi
+  fi
+  if [ -z "$index" ]; then
+    echo "  ERROR: '$want' is not an available choice for $name. Valid choices:"
+    echo "$block" | sed -n 's/^Choice: /    /p'
+    return 1
+  fi
+  if ! timeout $GPHOTO2_TIMEOUT gphoto2 --set-config-index "$path=$index" 2>/dev/null; then
+    echo "  ERROR: gphoto2 failed setting $name (mode dial may not allow it)."
+    log "Camera: FAILED setting $name (index $index)."
+    return 1
+  fi
+  # verify: read back and compare
+  local now=$(get_config "$path" | sed -n 's/^Current: //p')
+  local wanted_text=$(echo "$block" | sed -n "s/^Choice: $index //p")
+  if [ "$now" = "$wanted_text" ]; then
+    echo "  $name set to: $now"
+    log "Camera: $name set to '$now'."
+    return 0
+  else
+    echo "  ERROR: set appeared to succeed but read-back shows '$now' (wanted '$wanted_text')."
+    log "Camera: $name set verify FAILED - read back '$now', wanted '$wanted_text'."
+    return 1
+  fi
+}
+
+# print "name = current" for every parameter. One gphoto2 call per
+# parameter - slower than batching, but a parameter missing on a given
+# body/mode then shows as <unreadable> instead of misaligning the rest.
+show_all_current()
+{
+  local n cur
+  for n in $(param_names); do
+    cur=$(get_config "$(param_path $n)" | sed -n 's/^Current: //p')
+    printf '  %-11s %-24s %s\n' "$n" "${cur:-<unreadable>}" "($(param_desc $n))"
+  done
+}
+
+# ---------------------------------------------------------------- CLI actions
+do_status()
+{
+  echo "  Power relay:  $(camera_power_state) (BCM $CAMERA_RELAY_PIN)"
+  if camera_usb_detected; then
+    echo "  USB:          detected ($(lsusb | grep -i "ID $CAMERA_USB_ID" | head -1 | sed 's/^.*ID /ID /'))"
+  else
+    echo '  USB:          not detected'
+    return 0
+  fi
+  ensure_camera_ready
+  echo '  Current settings:'
+  show_all_current
+}
+
+do_get()
+{
+  local name="$1"
+  local path=$(param_path "$name")
+  if [ -z "$path" ]; then
+    echo "Unknown parameter '$name'. Use: camera.sh list"
+    exit 1
+  fi
+  ensure_camera_ready
+  local block=$(get_config "$path")
+  if [ -z "$block" ]; then
+    echo "ERROR: could not read $name from the camera."
+    exit 1
+  fi
+  echo "  $name ($(param_desc $name))"
+  echo "$block" | sed -n 's/^Current: /  Current: /p'
+  [ "$(echo "$block" | sed -n 's/^Readonly: //p')" = "1" ] && echo '  (read-only right now)'
+  echo '  Choices:'
+  echo "$block" | sed -n 's/^Choice: /    /p'
+}
+
+do_set()
+{
+  local name="$1" value="$2"
+  local path=$(param_path "$name")
+  if [ -z "$path" ]; then
+    echo "Unknown parameter '$name'. Use: camera.sh list"
+    exit 1
+  fi
+  if [ -z "$value" ]; then
+    echo "Usage: camera.sh set $name <value>"
+    exit 1
+  fi
+  ensure_camera_ready
+  set_config "$name" "$path" "$value"
+}
+
+do_list()
+{
+  echo '  Parameters:'
+  local n
+  for n in $(param_names); do
+    printf '    %-11s %s\n' "$n" "$(param_desc $n)"
+  done
+}
+
+# ---------------------------------------------------------------- interactive
+interactive_menu()
+{
+  echo '================================================================================'
+  echo '|                                                                              |'
+  echo '|   visIOn - Camera Control (Canon EOS via gphoto2)                            |'
+  echo '|                                                                              |'
+  echo "|                              < Version ${SOFTWARE_VERSION} >                                |"
+  echo '|                                                                              |'
+  echo '================================================================================'
+  ensure_camera_ready
+  local model=$(timeout $GPHOTO2_TIMEOUT gphoto2 --auto-detect 2>/dev/null | sed -n '3p' | sed 's/  *usb.*//')
+  [ -n "$model" ] && echo "  Camera: $model"
+  while true; do
+    echo ''
+    echo '  Current settings:'
+    local names=($(param_names))
+    local i=1
+    local n
+    for n in "${names[@]}"; do
+      local cur=$(get_config "$(param_path $n)" | sed -n 's/^Current: //p')
+      printf '  %2d. %-11s %-24s %s\n' $i "$n" "${cur:-<unreadable>}" "($(param_desc $n))"
+      i=$((i + 1))
+    done
+    echo '   p. Power camera off and exit'
+    echo '   q. Quit (leave camera powered)'
+    read -p '  Choose a parameter to change: ' choice
+    case "$choice" in
+      q) exit 0 ;;
+      p) camera_power_off; exit 0 ;;
+      ''|*[!0-9]*) echo '  Invalid choice.'; continue ;;
+    esac
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#names[@]}" ]; then
+      echo '  Invalid choice.'
+      continue
+    fi
+    local name="${names[$((choice - 1))]}"
+    local path=$(param_path "$name")
+    local block=$(get_config "$path")
+    if [ -z "$block" ]; then
+      echo "  ERROR: could not read $name from the camera."
+      continue
+    fi
+    if echo "$block" | grep -q '^Readonly: 1'; then
+      echo "  $name is read-only right now (set by the mode dial on the camera)."
+      continue
+    fi
+    echo "  $name - current: $(echo "$block" | sed -n 's/^Current: //p')"
+    echo '  Choices:'
+    echo "$block" | sed -n 's/^Choice: \([0-9]*\) \(.*\)/    \1. \2/p'
+    read -p '  New value (choice number, empty to cancel): ' sel
+    [ -z "$sel" ] && continue
+    if ! [[ "$sel" =~ ^[0-9]+$ ]] || ! echo "$block" | grep -q "^Choice: $sel "; then
+      echo '  Invalid choice number.'
+      continue
+    fi
+    set_config "$name" "$path" "$sel"
+  done
+}
+
+# ---------------------------------------------------------------- entry point
+case "$1" in
+  '')       interactive_menu ;;
+  status)   do_status ;;
+  list)     do_list ;;
+  get)      do_get "$2" ;;
+  set)      do_set "$2" "$3" ;;
+  on)       ensure_camera_ready && echo '  Camera powered and ready.' ;;
+  off)      camera_power_off ;;
+  *)
+    echo "Usage: $0 [status|list|get <param>|set <param> <value>|on|off]"
+    echo "       $0            (no arguments: interactive menu)"
+    exit 1
+    ;;
+esac

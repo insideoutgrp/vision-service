@@ -16,12 +16,40 @@ will sit in subfolders under the same root.
 ```
 /home/pi/vision-service/      service root = run directory (VISION_HOME)
   daemon.sh, utilities.sh, …  power-management runtime (this repo: Software/wittypi/)
+  camera.sh                   camera control (gphoto2) — see below
   install.sh                  copy of the installer (updated by deploy)
   schedule.wpi                per-device state — active schedule (never overwritten)
   buttonRelay.conf            per-device state — button→relay config
   wittyPi.log, schedule.log   diagnostic record
   schedules/                  deployed schedule catalogue (synced from Schedules/)
 ```
+
+## Camera control
+
+`camera.sh` views and changes capture parameters on the attached Canon DSLR
+(EOS 1300D / 2000D) over USB via gphoto2. Run it with no arguments for the
+interactive menu, or script it:
+
+```bash
+/home/pi/vision-service/camera.sh status          # power, USB detection, all current values
+/home/pi/vision-service/camera.sh get iso         # current value + choices (read live from the camera)
+/home/pi/vision-service/camera.sh set iso 400
+/home/pi/vision-service/camera.sh set aperture 8
+/home/pi/vision-service/camera.sh set expcomp +0.3
+/home/pi/vision-service/camera.sh off             # release the camera power relay
+```
+
+Parameters: `iso`, `aperture`, `shutter`, `expcomp`, `wb`, `format`,
+`metering`, `style`, `drive`, `focusmode`, `target`, `aemode`.
+
+The camera is powered through the button→relay output (BCM 13 by default,
+from `buttonRelay.conf`): before any gphoto2 command the script energises
+the relay, waits for the camera to enumerate on USB (`lsusb`, Canon vendor
+`04a9`), and confirms gphoto2 can talk to it. Power is left ON after
+`get`/`set` so scripted sequences don't power-cycle the camera per command
+— finish with `camera.sh off`. Every change is verified by read-back and
+logged to `wittyPi.log`. Note the mode dial gates what is settable (e.g.
+aperture needs M/Av); read-only parameters are reported as such.
 
 Deploy (self-updating one-liner; safe to re-run; migrates legacy
 `/home/pi/wittypi` installs automatically — all per-device state is carried

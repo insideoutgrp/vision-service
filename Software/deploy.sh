@@ -260,7 +260,7 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
   # version-first order left new utilities + old scripts and every rerun
   # said "already up to date" - locking the mixed install in permanently.
   # With version-last, an interrupted deploy simply reruns.
-  UPDATE_FILES="daemon.sh runScript.sh wittyPi.sh syncTime.sh checkInternet.sh buttonRelay.sh utilities.sh"
+  UPDATE_FILES="daemon.sh runScript.sh wittyPi.sh syncTime.sh checkInternet.sh buttonRelay.sh camera.sh utilities.sh"
 
   # backup
   BACKUP_DIR="$WITTYPI_DIR/backup_v${CURRENT_VER:-old}_$(date +%Y%m%d_%H%M%S)"
@@ -304,6 +304,15 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
   # root (the parent would be the user's home - don't litter it)
   if [ -f "$SRC_DIR/install.sh" ]; then
     cp "$SRC_DIR/install.sh" "$WITTYPI_DIR/install.sh" 2>/dev/null || true
+  fi
+
+  # v5.38: camera.sh needs gphoto2; updates never run install.sh, so pull
+  # the dependency in here for devices installed before it existed. The
+  # device is online (this deploy just downloaded from GitHub).
+  if ! command -v gphoto2 >/dev/null 2>&1; then
+    echo ''
+    echo '>>> Installing gphoto2 (camera control dependency)'
+    apt install -y gphoto2 || echo '  WARN: gphoto2 install failed - camera.sh needs it; rerun deploy or install manually.'
   fi
 
   # fix ownership

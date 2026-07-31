@@ -14,6 +14,28 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### v5.38 — 2026-07-31
+**Camera control module** (`camera.sh`): view and change capture parameters
+on the attached Canon DSLR (EOS 1300D / 2000D) over USB via gphoto2 —
+interactive menu plus a scriptable CLI (`status` / `list` / `get` / `set` /
+`on` / `off`).
+- Parameters: iso, aperture, shutter, expcomp, wb, format, metering,
+  style, drive, focusmode, target, aemode. Choices are read **live from
+  the camera** (aperture depends on the fitted lens), never hard-coded;
+  read-only parameters (e.g. the exposure mode dial) are reported, not
+  half-applied; every set is verified by read-back and logged.
+- Camera power: the camera is fed through the button→relay watcher's relay
+  (BCM 13 = wPi 23, from `buttonRelay.conf`; `CAMERA_RELAY_PIN` overrides).
+  Before any gphoto2 command the relay is energised and the script waits
+  (≤25 s) for the camera to enumerate on USB (`lsusb`, Canon vendor
+  `04a9`), then confirms `gphoto2 --auto-detect` sees it. Power is left ON
+  after CLI get/set so scripted sequences don't power-cycle the camera per
+  command; `camera.sh off` releases the relay.
+- All gphoto2 invocations run under `timeout` (wedged PTP session guard);
+  gvfs gphoto2 volume monitors are released before claiming the camera.
+- `gphoto2` added to install.sh deps; deploy.sh also installs it on update
+  for devices provisioned before v5.38.
+
 ### v5.37 — 2026-07-31 (first visIOn release)
 Imported into the **visIOn** IoT endpoint management service as its
 power-management module. Packaging/layout only — **no runtime behaviour

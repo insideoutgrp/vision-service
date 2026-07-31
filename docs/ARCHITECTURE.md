@@ -39,6 +39,7 @@ firmware register map and pin map see
 | `syncTime.sh` | Network→system→RTC time sync | cron `*/15` |
 | `checkInternet.sh` | Connectivity watchdog: 3 consecutive failures → reboot (capped 2/day, 30-min uptime gate) | cron `:07/:22/:37/:52` |
 | `buttonRelay.sh` | Button (BCM 4) → relay (default BCM 13) watcher; per-device `buttonRelay.conf` | daemon-spawned, detached, single instance |
+| `camera.sh` | Canon DSLR (1300D/2000D) parameter control via gphoto2: relay power-up → USB detect → get/set with verify; interactive menu + CLI | manual / scripted |
 | `wittyPi.sh` | Interactive menu (schedule choice, times, config) | manual |
 | `beforeScript.sh` / `afterStartup.sh` / `beforeShutdown.sh` | User extension hooks | daemon boot sequence |
 | `schedules/` | Deployed `.wpi` schedule catalogue (synced by deploy) | — |
@@ -140,7 +141,7 @@ day by Guaranteed Wake); firmware flash is at 8188/8192 bytes.
 |---|---|---|
 | 2/3 | — | I2C bus 1 (HAT at 0x08) |
 | 4 | in | Push button (shared with MCU); watched by `buttonRelay.sh`. Keep 1-Wire off this pin |
-| 13 | out | Relay output (default; configurable in `buttonRelay.conf`; physical pin 33) |
+| 13 | out | Relay output (default; configurable in `buttonRelay.conf`; physical pin 33). Feeds the camera's power coupler — `camera.sh` drives it high before any gphoto2 traffic |
 | 14 | — | UART TXD — firmware watches it for OS shutdown/reboot detection (keep `enable_uart=1`) |
 | 17 | out (pulsed) | SYS_UP handshake to firmware |
 | 5/6 | in | L3V7 battery variant only (charge/standby status) |

@@ -102,6 +102,14 @@ else
   apt install -y i2c-tools || ((ERR++))
 fi
 
+# install gphoto2 (camera control - camera.sh)
+echo '>>> Install gphoto2'
+if hash gphoto2 2>/dev/null; then
+  echo 'Seems gphoto2 is installed already, skip this step.'
+else
+  apt install -y gphoto2 || ((ERR++))
+fi
+
 # make sure en_GB.UTF-8 locale is installed
 echo '>>> Make sure en_GB.UTF-8 locale is installed'
 locale_commentout=$(sed -n 's/\(#\).*en_GB.UTF-8 UTF-8/1/p' /etc/locale.gen)
@@ -145,7 +153,7 @@ SRC_DIR="${WITTYPI_SRC:-$SCRIPT_DIR/wittypi}"
 # v5.29: utilities.sh last - it carries SOFTWARE_VERSION, and copying it
 # first meant an interrupted update looked "already up to date" on rerun
 # while the other scripts were still the old version.
-UPDATE_FILES="daemon.sh runScript.sh wittyPi.sh syncTime.sh checkInternet.sh buttonRelay.sh utilities.sh"
+UPDATE_FILES="daemon.sh runScript.sh wittyPi.sh syncTime.sh checkInternet.sh buttonRelay.sh camera.sh utilities.sh"
 
 # Sync $src_dir/*.wpi into $dst_dir/, exactly:
 #   - removes .wpi files on device not present in source
@@ -271,7 +279,7 @@ if [ $ERR -eq 0 ]; then
       echo '       Run via Software/deploy.sh, or set WITTYPI_SRC.'
       exit 1
     fi
-    for f in wittyPi.sh daemon.sh runScript.sh beforeScript.sh afterStartup.sh beforeShutdown.sh; do
+    for f in wittyPi.sh daemon.sh runScript.sh beforeScript.sh afterStartup.sh beforeShutdown.sh camera.sh; do
       chmod +x "$DIR/$f"
     done
     sed -e "s#/home/pi/vision-service#$DIR#g" "$DIR/init.sh" >/etc/init.d/wittypi
