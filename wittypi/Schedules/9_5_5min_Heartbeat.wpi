@@ -1,0 +1,23 @@
+# 7 days, 9am-5pm, with a 5-minute OFF heartbeat at the end of each hour
+# Useful for verifying that schedules and scripts are running as expected.
+# Cycle = 24 hours (DST-corrected automatically by runScript.sh).
+
+BEGIN	2022-01-03 09:00:00
+END	2030-01-01 00:00:00
+
+ON	M55		# 09:00 - 09:55
+OFF	M5		# 09:55 - 10:00  heartbeat
+ON	M55		# 10:00 - 10:55
+OFF	M5		# 10:55 - 11:00  heartbeat
+ON	M55		# 11:00 - 11:55
+OFF	M5		# 11:55 - 12:00  heartbeat
+ON	M55		# 12:00 - 12:55
+OFF	M5		# 12:55 - 13:00  heartbeat
+ON	M55		# 13:00 - 13:55
+OFF	M5		# 13:55 - 14:00  heartbeat
+ON	M55		# 14:00 - 14:55
+OFF	M5		# 14:55 - 15:00  heartbeat
+ON	M55		# 15:00 - 15:55
+OFF	M5		# 15:55 - 16:00  heartbeat
+ON	M55		# 16:00 - 16:55
+OFF	H16 M5		# 16:55 - 09:00 next day (overnight off)

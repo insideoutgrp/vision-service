@@ -1,0 +1,10 @@
+.DS_Store
+
+# Device-side state (never committed; see docs/INTEGRATION.md "Per-device state")
+schedule.wpi
+buttonRelay.conf
+wittyPi.log
+schedule.log
+.net_fail_count
+.net_reboot_log
+backup_v*/

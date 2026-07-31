@@ -1,0 +1,19 @@
+# 1 hour at midday Mon-Thu, then ON continuously from Friday midday
+# through to Monday midday + the Monday hour.
+# A brief 5-min OFF at Mon 11:55-12:00 breaks the loop boundary so the
+# schedule engine doesn't see two consecutive ON states.
+# Cycle = 7 days = 168 hours (DST-corrected automatically).
+
+BEGIN	2022-01-03 12:00:00
+END	2030-01-01 00:00:00
+
+ON	H1		# Mon 12:00 - 13:00
+OFF	H23		# Mon 13:00 - Tue 12:00
+ON	H1		# Tue 12:00 - 13:00
+OFF	H23		# Tue 13:00 - Wed 12:00
+ON	H1		# Wed 12:00 - 13:00
+OFF	H23		# Wed 13:00 - Thu 12:00
+ON	H1		# Thu 12:00 - 13:00
+OFF	H23		# Thu 13:00 - Fri 12:00
+ON	D2 H23 M55	# Fri 12:00 - Mon 11:55 (weekend 24/7 + Monday morning)
+OFF	M5		# Mon 11:55 - Mon 12:00 (loop boundary heartbeat)

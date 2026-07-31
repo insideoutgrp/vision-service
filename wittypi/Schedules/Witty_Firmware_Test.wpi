@@ -1,0 +1,7 @@
+#Witty Firmware Test
+
+BEGIN 2026-01-01 00:00:00
+END 2035-01-01 00:00:00
+
+ON M10
+OFF M5

@@ -1,0 +1,15 @@
+#7 day 7-7 weekday 24/7 weekend
+
+BEGIN 2022-01-03 07:00:00
+END   2030-01-01 07:00:00
+
+ON    H12
+OFF   H12
+ON    H12
+OFF   H12
+ON    H12
+OFF   H12
+ON    H12
+OFF   H12
+ON    D2 H23 M55
+OFF   M5

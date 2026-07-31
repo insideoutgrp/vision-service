@@ -1,0 +1,16 @@
+#5 days 10 3 battery saver
+
+BEGIN	2022-01-03 10:00:00
+END	2030-01-01 00:00:00
+
+ON	H5	
+OFF	H19
+ON	H5	
+OFF	H19	
+ON	H5	
+OFF	H19	
+ON	H5	
+OFF	H19	
+ON	H5	
+OFF	D2 H19	
+	

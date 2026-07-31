@@ -1,0 +1,7 @@
+# 24 hour 15 min reboot
+
+BEGIN	2022-01-03 07:00:00
+END	2030-01-01 00:00:00
+
+ON	H23 M45
+OFF	M15
