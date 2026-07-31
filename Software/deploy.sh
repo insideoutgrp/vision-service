@@ -3,7 +3,7 @@
 #
 # One-liner deployment script for the visIOn Witty Pi runtime.
 # Run on a Pi with:
-#   curl -sSL https://raw.githubusercontent.com/insideoutgrp/visIOn/main/Software/deploy.sh | sudo bash
+#   curl -sSL https://raw.githubusercontent.com/insideoutgrp/vision-service/main/Software/deploy.sh | sudo bash
 #
 # Installs/updates the runtime at /home/pi/vision/wittypi. Devices still on
 # the legacy /home/pi/wittypi layout are migrated automatically: all
@@ -19,7 +19,7 @@ if [ "$(id -u)" != 0 ]; then
 fi
 
 # NOTE: must match where this repository is hosted
-REPO_URL="https://github.com/insideoutgrp/visIOn"
+REPO_URL="https://github.com/insideoutgrp/vision-service"
 BRANCH="main"
 MIN_FW_REVISION=14   # firmware Rev 14 required for v5.1+ Pi software
 TMP_DIR=$(mktemp -d)

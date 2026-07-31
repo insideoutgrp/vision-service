@@ -26,7 +26,7 @@ Deploy (self-updating one-liner; safe to re-run; migrates legacy
 `/home/pi/wittypi` installs automatically, preserving all per-device state):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/insideoutgrp/visIOn/main/Software/deploy.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/insideoutgrp/vision-service/main/Software/deploy.sh | sudo bash
 ```
 
 Check the installed version on a device:
