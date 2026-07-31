@@ -5,11 +5,13 @@
 # Run on a Pi with:
 #   curl -sSL https://raw.githubusercontent.com/insideoutgrp/vision-service/main/Software/deploy.sh | sudo bash
 #
-# Installs/updates the runtime at /home/pi/vision/wittypi. Devices still on
-# the legacy /home/pi/wittypi layout are migrated automatically: all
-# per-device state (schedule.wpi, buttonRelay.conf, logs, watchdog state)
-# is carried over, cron entries and /etc/init.d/wittypi are repointed, and
-# the old install is removed once the copy is verified.
+# Installs/updates the runtime at /home/pi/vision-service (the run
+# directory IS the service root - no nested wittypi/ folder). Devices on a
+# previous layout (/home/pi/wittypi, or the interim /home/pi/vision/wittypi)
+# are migrated automatically: all per-device state (schedule.wpi,
+# buttonRelay.conf, logs, watchdog state) is carried over, cron entries and
+# /etc/init.d/wittypi are repointed, and the old install is removed once
+# the copy is verified.
 #
 
 set -e
@@ -105,7 +107,7 @@ TARGET_HOME="$(eval echo "~${TARGET_USER}")"
 if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
   TARGET_HOME='/home/pi'
 fi
-VISION_HOME="${VISION_HOME:-$TARGET_HOME/vision}"
+VISION_HOME="${VISION_HOME:-$TARGET_HOME/vision-service}"
 
 # download the repo
 echo ">>> Downloading from $REPO_URL"
@@ -126,17 +128,20 @@ fi
 echo '  Done.'
 echo ''
 
-# migrate a legacy /home/pi/wittypi installation into the visIOn layout.
-# Full-tree copy so all per-device state (schedule.wpi, buttonRelay.conf,
-# logs, .net_* watchdog state, hook scripts, backups) carries over; the
-# normal update path below then brings the scripts to the target version.
-# After a verified copy the legacy install is REMOVED so nothing can ever
-# launch or write to the old path again. Re-runnable: once
-# $VISION_HOME/wittypi exists the block is skipped.
-# candidate legacy locations (deduplicated - both are the same path when
-# the target user is pi)
-LEGACY_CANDIDATES="$TARGET_HOME/wittypi"
-[ "$TARGET_HOME" != "/home/pi" ] && LEGACY_CANDIDATES="$LEGACY_CANDIDATES /home/pi/wittypi"
+# migrate a previous-layout installation into the visIOn layout. Two known
+# prior layouts: /home/pi/wittypi (original) and /home/pi/vision/wittypi
+# (interim). Full-tree copy so all per-device state (schedule.wpi,
+# buttonRelay.conf, logs, .net_* watchdog state, hook scripts, backups)
+# carries over; the normal update path below then brings the scripts to the
+# target version. After a verified copy the legacy install is REMOVED so
+# nothing can ever launch or write to the old path again. Re-runnable: once
+# $VISION_HOME holds a runtime the block is skipped.
+# candidate legacy locations (deduplicated - the pairs collapse to one path
+# when the target user is pi)
+LEGACY_CANDIDATES="$TARGET_HOME/vision/wittypi $TARGET_HOME/wittypi"
+if [ "$TARGET_HOME" != "/home/pi" ]; then
+  LEGACY_CANDIDATES="$LEGACY_CANDIDATES /home/pi/vision/wittypi /home/pi/wittypi"
+fi
 LEGACY_DIR=""
 for d in $LEGACY_CANDIDATES; do
   if [ -d "$d" ] && [ -f "$d/utilities.sh" ]; then
@@ -144,8 +149,8 @@ for d in $LEGACY_CANDIDATES; do
     break
   fi
 done
-if [ ! -d "$VISION_HOME/wittypi" ] && [ -n "$LEGACY_DIR" ]; then
-  echo ">>> Migrating legacy installation: $LEGACY_DIR -> $VISION_HOME/wittypi"
+if [ ! -f "$VISION_HOME/utilities.sh" ] && [ -n "$LEGACY_DIR" ]; then
+  echo ">>> Migrating legacy installation: $LEGACY_DIR -> $VISION_HOME"
   # stop the legacy daemon and any background children before copying, so
   # nothing keeps writing into the old tree (or the I2C registers) mid-move.
   # The daemon is killed by pidfile AND by path - the pidfile can be stale
@@ -159,24 +164,31 @@ if [ ! -d "$VISION_HOME/wittypi" ] && [ -n "$LEGACY_DIR" ]; then
   pkill -f "$LEGACY_DIR/daemon.sh" 2>/dev/null || true
   pkill -f "$LEGACY_DIR/runScript.sh" 2>/dev/null || true
   pkill -f "$LEGACY_DIR/buttonRelay.sh" 2>/dev/null || true
+  # cron-spawned one-shots can be mid-run and appending to the legacy log
+  pkill -f "$LEGACY_DIR/syncTime.sh" 2>/dev/null || true
+  pkill -f "$LEGACY_DIR/checkInternet.sh" 2>/dev/null || true
   # drop legacy cron entries immediately so cron cannot spawn the old
   # scripts mid-migration (the current entries are re-installed below)
   (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh') | crontab - || true
   sleep 1
   mkdir -p "$VISION_HOME"
-  cp -a "$LEGACY_DIR" "$VISION_HOME/wittypi"
+  # contents copy (trailing /.) - the runtime lands directly in the
+  # service root, no nested folder
+  cp -a "$LEGACY_DIR"/. "$VISION_HOME"/
   # verify the copy before deleting the original; one re-copy attempt in
   # case something appended to a log between copy and verify
-  if ! diff -rq "$LEGACY_DIR" "$VISION_HOME/wittypi" >/dev/null 2>&1; then
-    rm -rf "$VISION_HOME/wittypi"
-    cp -a "$LEGACY_DIR" "$VISION_HOME/wittypi"
+  if ! diff -rq "$LEGACY_DIR" "$VISION_HOME" >/dev/null 2>&1; then
+    cp -a "$LEGACY_DIR"/. "$VISION_HOME"/
   fi
-  if diff -rq "$LEGACY_DIR" "$VISION_HOME/wittypi" >/dev/null 2>&1; then
+  if diff -rq "$LEGACY_DIR" "$VISION_HOME" >/dev/null 2>&1; then
     rm -rf "$LEGACY_DIR"
+    # the interim layout nested the runtime under a vision/ parent; remove
+    # that parent too if the migration left it empty
+    rmdir "$(dirname "$LEGACY_DIR")" 2>/dev/null || true
     echo "  State copied and verified; legacy install $LEGACY_DIR removed."
   else
     # copy could not be verified - keep the original out of the way rather
-    # than deleting data; the vision tree is still the live install
+    # than deleting data; the vision-service tree is still the live install
     LEGACY_BACKUP="${LEGACY_DIR}.pre-vision"
     [ -e "$LEGACY_BACKUP" ] && LEGACY_BACKUP="${LEGACY_BACKUP}_$(date +%Y%m%d_%H%M%S)"
     mv "$LEGACY_DIR" "$LEGACY_BACKUP"
@@ -189,7 +201,7 @@ fi
 # install under a different home, or a .pre-vision backup from a failed
 # verification) - flagged for manual attention rather than deleted blind
 for d in $LEGACY_CANDIDATES; do
-  if [ -d "$VISION_HOME/wittypi" ] && [ -d "$d" ] && [ -f "$d/utilities.sh" ]; then
+  if [ -f "$VISION_HOME/utilities.sh" ] && [ -d "$d" ] && [ -f "$d/utilities.sh" ]; then
     echo "  WARN: another legacy install remains at $d - remove it manually."
   fi
   for b in "$d".pre-vision*; do
@@ -197,10 +209,10 @@ for d in $LEGACY_CANDIDATES; do
   done
 done
 
-# detect existing installation (visIOn layout)
+# detect existing installation (visIOn layout: runtime directly in the root)
 WITTYPI_DIR=""
-if [ -d "$VISION_HOME/wittypi" ] && [ -f "$VISION_HOME/wittypi/utilities.sh" ]; then
-  WITTYPI_DIR="$VISION_HOME/wittypi"
+if [ -f "$VISION_HOME/utilities.sh" ]; then
+  WITTYPI_DIR="$VISION_HOME"
 fi
 
 # regenerate the boot launcher and cron entries whenever an installation is
@@ -212,7 +224,7 @@ fi
 # - the root crontab could still run the legacy-path syncTime.sh /
 #   checkInternet.sh, i.e. no time sync and no connectivity watchdog
 if [ -n "$WITTYPI_DIR" ]; then
-  sed -e "s#/home/pi/vision/wittypi#$WITTYPI_DIR#g" "$SRC_DIR/wittypi/init.sh" >/etc/init.d/wittypi
+  sed -e "s#/home/pi/vision-service#$WITTYPI_DIR#g" "$SRC_DIR/wittypi/init.sh" >/etc/init.d/wittypi
   chmod +x /etc/init.d/wittypi
   update-rc.d wittypi defaults >/dev/null 2>&1 || true
 
@@ -288,10 +300,10 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
     sync_schedules "$SRC_DIR/../Schedules" "$WITTYPI_DIR/schedules"
   fi
 
-  # also update install.sh in parent dir
-  INSTALL_DIR="$(dirname "$WITTYPI_DIR")"
+  # keep a current copy of the installer on the device, inside the service
+  # root (the parent would be the user's home - don't litter it)
   if [ -f "$SRC_DIR/install.sh" ]; then
-    cp "$SRC_DIR/install.sh" "$INSTALL_DIR/install.sh" 2>/dev/null || true
+    cp "$SRC_DIR/install.sh" "$WITTYPI_DIR/install.sh" 2>/dev/null || true
   fi
 
   # fix ownership
@@ -406,10 +418,10 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
 else
   # --- FRESH installation ---
   echo '>>> No existing installation found. Running full install...'
-  # install.sh anchors itself at $VISION_HOME and installs the runtime into
-  # $VISION_HOME/wittypi; WITTYPI_SRC points it at the downloaded source so
-  # the checkout's own wittypi/ folder is never mistaken for an install.
-  echo ">>> Installing visIOn Witty Pi runtime into $VISION_HOME/wittypi"
+  # install.sh anchors itself at $VISION_HOME and installs the runtime
+  # directly into it; WITTYPI_SRC points it at the downloaded source so the
+  # checkout's own wittypi/ folder is never mistaken for an install.
+  echo ">>> Installing visIOn runtime into $VISION_HOME"
   WITTYPI_SRC="$SRC_DIR/wittypi" VISION_HOME="$VISION_HOME" bash "$SRC_DIR/install.sh"
 fi
 

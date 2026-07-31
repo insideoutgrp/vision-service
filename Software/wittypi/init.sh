@@ -13,10 +13,10 @@
 
 # Default paths assume the visIOn layout; install.sh rewrites them to the
 # actual install directory when generating /etc/init.d/wittypi.
-DAEMON=/home/pi/vision/wittypi/daemon.sh
+DAEMON=/home/pi/vision-service/daemon.sh
 RETRY_DELAY=15
 MAX_RETRIES=3
-LOG=/home/pi/vision/wittypi/wittyPi.log
+LOG=/home/pi/vision-service/wittyPi.log
 
 # Run the daemon, retrying on non-zero exit. Daemon naturally exits
 # after startup tasks (alarm registers set, schedule revised). A

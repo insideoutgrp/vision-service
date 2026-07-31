@@ -4,22 +4,23 @@ IoT endpoint management service for Inside Out Group **time-lapse cameras** —
 unattended, field-deployed Raspberry Pi units (3G/4G connected, UK sites, no
 physical access).
 
-The service deploys as a unit to **`/home/pi/vision`** on each device. Its
-first (and currently only) module is the Witty Pi 4 power-management runtime,
+The service deploys as a unit to **`/home/pi/vision-service`** on each
+device — the run directory is the service root itself. Its first (and
+currently only) component is the Witty Pi 4 power-management runtime,
 imported from our hardened [uugear/Witty-Pi-4](https://github.com/uugear/Witty-Pi-4)
 fork; further device-management modules (capture, uplink, fleet telemetry)
-will sit alongside it under the same root.
+will sit in subfolders under the same root.
 
 ## On-device layout
 
 ```
-/home/pi/vision/              service root (VISION_HOME)
+/home/pi/vision-service/      service root = run directory (VISION_HOME)
+  daemon.sh, utilities.sh, …  power-management runtime (this repo: Software/wittypi/)
   install.sh                  copy of the installer (updated by deploy)
-  wittypi/                    power-management runtime (this repo: Software/wittypi/)
-    schedule.wpi              per-device state — active schedule (never overwritten)
-    buttonRelay.conf          per-device state — button→relay config
-    wittyPi.log, schedule.log diagnostic record
-    schedules/                deployed schedule catalogue (synced from Schedules/)
+  schedule.wpi                per-device state — active schedule (never overwritten)
+  buttonRelay.conf            per-device state — button→relay config
+  wittyPi.log, schedule.log   diagnostic record
+  schedules/                  deployed schedule catalogue (synced from Schedules/)
 ```
 
 Deploy (self-updating one-liner; safe to re-run; migrates legacy
@@ -34,7 +35,7 @@ curl -sSL https://raw.githubusercontent.com/insideoutgrp/vision-service/main/Sof
 Check the installed version on a device:
 
 ```bash
-grep "SOFTWARE_VERSION" /home/pi/vision/wittypi/utilities.sh | head -1
+grep "SOFTWARE_VERSION" /home/pi/vision-service/utilities.sh | head -1
 ```
 
 ---

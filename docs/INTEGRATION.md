@@ -5,7 +5,7 @@ preserve on devices, and where the extension points are.
 
 > **Status:** this import has been carried out — the Witty-Pi-4 fork's
 > `firmware-rev14` line now lives in the **visIOn** repository as the
-> `Software/wittypi/` module, deployed to `/home/pi/vision/wittypi`
+> `Software/wittypi/` module, deployed directly into `/home/pi/vision-service`
 > (v5.37+). The guidance below is kept for reference and still applies to
 > folding further modules in alongside it.
 
@@ -36,7 +36,7 @@ Rev-14-specific assumptions; fixes are ported to both in lockstep.
   the version; copying it earlier re-introduces the interrupted-deploy
   version-lock bug).
 - Remote version check:
-  `grep "SOFTWARE_VERSION" /home/pi/vision/wittypi/utilities.sh`.
+  `grep "SOFTWARE_VERSION" /home/pi/vision-service/utilities.sh`.
   Firmware revision: `i2cget -y 1 0x08 12`.
 
 ## Per-device state — never overwrite these
@@ -44,7 +44,7 @@ Rev-14-specific assumptions; fixes are ported to both in lockstep.
 Deploys update code only. The following device files are state and must
 survive any import/migration:
 
-| File (in `/home/pi/vision/wittypi/`) | Contents |
+| File (in `/home/pi/vision-service/`) | Contents |
 |---|---|
 | `schedule.wpi` | The device's **active** schedule selection |
 | `buttonRelay.conf` | Button→relay per-device config (auto-created; deploy never touches it) |
@@ -56,8 +56,8 @@ survive any import/migration:
 
 **Cron entries** (installed by deploy/install; re-installed idempotently):
 ```
-*/15 * * * *      /home/pi/vision/wittypi/syncTime.sh      >> .../wittyPi.log 2>&1
-7,22,37,52 * * * * /home/pi/vision/wittypi/checkInternet.sh >> .../wittyPi.log 2>&1
+*/15 * * * *      /home/pi/vision-service/syncTime.sh      >> .../wittyPi.log 2>&1
+7,22,37,52 * * * * /home/pi/vision-service/checkInternet.sh >> .../wittyPi.log 2>&1
 ```
 
 **Shared resources** a parent project must respect:

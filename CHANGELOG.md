@@ -19,10 +19,12 @@ Imported into the **visIOn** IoT endpoint management service as its
 power-management module. Packaging/layout only — **no runtime behaviour
 changes**; all scripts are self-locating and unchanged apart from the
 version string.
-- Install target moved from `/home/pi/wittypi` to `/home/pi/vision/wittypi`
-  (`VISION_HOME=/home/pi/vision` service root; future modules sit alongside)
+- Install target moved from `/home/pi/wittypi` to `/home/pi/vision-service`
+  (`VISION_HOME` service root = run directory, runtime installed directly in
+  it; future modules sit in subfolders alongside)
 - `deploy.sh` retargeted at the visIOn repository (`main` branch) and now
-  **migrates legacy `/home/pi/wittypi` installs automatically**: legacy
+  **migrates previous-layout installs automatically** (`/home/pi/wittypi`
+  and the interim `/home/pi/vision/wittypi`): legacy
   daemon and children stopped (by pidfile and by path), full-tree copy
   preserves all per-device state (`schedule.wpi`, `buttonRelay.conf`, logs,
   `.net_*` watchdog state, hooks, backups), and the legacy install is

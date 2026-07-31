@@ -3,8 +3,8 @@
 # file: install.sh
 #
 # This script installs the visIOn Witty Pi power-management runtime and its
-# system dependencies. The install target is fixed at $VISION_HOME/wittypi
-# (default /home/pi/vision/wittypi) regardless of where it is run from.
+# system dependencies. The runtime installs DIRECTLY into $VISION_HOME
+# (default /home/pi/vision-service) regardless of where it is run from.
 #
 
 # check if sudo is used
@@ -13,20 +13,19 @@ if [ "$(id -u)" != 0 ]; then
   exit 1
 fi
 
-# install target: the wittypi module inside the visIOn service root.
-# visIOn deploys as a unit to /home/pi/vision (override with VISION_HOME);
-# the Witty Pi power-management runtime lives at $VISION_HOME/wittypi and
-# future service modules sit alongside it. The target is deliberately NOT
-# derived from the script location, otherwise installs run from a source
-# checkout would target the checkout.
-VISION_HOME="${VISION_HOME:-/home/pi/vision}"
-DIR="$VISION_HOME/wittypi"
+# install target: the visIOn service root. The Witty Pi runtime installs
+# DIRECTLY into $VISION_HOME (default /home/pi/vision-service) - the run
+# directory IS the service root, no nested wittypi/ folder. The target is
+# deliberately NOT derived from the script location, otherwise installs run
+# from a source checkout would target the checkout.
+VISION_HOME="${VISION_HOME:-/home/pi/vision-service}"
+DIR="$VISION_HOME"
 # resolve the script's own directory BEFORE changing cwd - a relative
 # invocation path (e.g. `sudo bash Software/install.sh`) would resolve
 # wrongly after the cd below
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 mkdir -p "$VISION_HOME" || { echo "Cannot create $VISION_HOME"; exit 1; }
-# the rest of this script uses paths relative to the service root
+# cd so temp downloads (e.g. wiringpi.deb) land somewhere writable and known
 cd "$VISION_HOME" || exit 1
 
 # error counter
@@ -198,29 +197,29 @@ sync_schedules() {
 if [ $ERR -eq 0 ]; then
   if [ -d "$DIR" ] && [ -f "$DIR/utilities.sh" ]; then
     # --- existing installation: update scripts ---
-    CURRENT_VER=$(grep "SOFTWARE_VERSION=" "wittypi/utilities.sh" | head -1 | grep -o "'[^']*'" | tr -d "'")
+    CURRENT_VER=$(grep "SOFTWARE_VERSION=" "$DIR/utilities.sh" | head -1 | grep -o "'[^']*'" | tr -d "'")
     TARGET_VER=$(grep "SOFTWARE_VERSION=" "$SRC_DIR/utilities.sh" | head -1 | grep -o "'[^']*'" | tr -d "'")
-    echo ">>> Existing Witty Pi installation found (v${CURRENT_VER:-unknown})"
+    echo ">>> Existing installation found (v${CURRENT_VER:-unknown})"
     if [ "$CURRENT_VER" = "$TARGET_VER" ]; then
       echo "  Already at v${TARGET_VER}, no update needed."
     else
       echo "  Updating to v${TARGET_VER}..."
 
       # backup current scripts
-      BACKUP_DIR="wittypi/backup_v${CURRENT_VER:-old}_$(date +%Y%m%d_%H%M%S)"
+      BACKUP_DIR="$DIR/backup_v${CURRENT_VER:-old}_$(date +%Y%m%d_%H%M%S)"
       echo "  Creating backup in $BACKUP_DIR"
       mkdir -p "$BACKUP_DIR"
       for f in $UPDATE_FILES; do
-        if [ -f "wittypi/$f" ]; then
-          cp "wittypi/$f" "$BACKUP_DIR/$f"
+        if [ -f "$DIR/$f" ]; then
+          cp "$DIR/$f" "$BACKUP_DIR/$f"
         fi
       done
 
       # copy updated scripts
       for f in $UPDATE_FILES; do
         if [ -f "$SRC_DIR/$f" ]; then
-          cp "$SRC_DIR/$f" "wittypi/$f" || ((ERR++))
-          chmod +x "wittypi/$f"
+          cp "$SRC_DIR/$f" "$DIR/$f" || ((ERR++))
+          chmod +x "$DIR/$f"
           echo "  Updated $f"
         fi
       done
@@ -228,7 +227,7 @@ if [ $ERR -eq 0 ]; then
       # sync schedules (existing install path)
       SCHED_SRC="$(dirname "$SRC_DIR")/../Schedules"
       echo '  Syncing schedules...'
-      sync_schedules "$SCHED_SRC" "wittypi/schedules"
+      sync_schedules "$SCHED_SRC" "$DIR/schedules"
 
       chown -R $SUDO_USER:$(id -g -n $SUDO_USER) "$VISION_HOME" || ((ERR++))
 
@@ -254,15 +253,15 @@ if [ $ERR -eq 0 ]; then
       echo '  If offline, run wittyPi.sh and choose option 1 (Write system time to RTC)'
       echo '  after verifying your system clock is correct.'
       echo ''
-      echo "  To rollback: sudo cp $BACKUP_DIR/* wittypi/ && sudo reboot"
+      echo "  To rollback: sudo cp $BACKUP_DIR/* $DIR/ && sudo reboot"
     fi
   else
     # --- fresh installation ---
-    echo '>>> Install wittypi'
+    echo '>>> Install visIOn runtime'
     if [ -d "$SRC_DIR" ] && [ -f "$SRC_DIR/utilities.sh" ]; then
-      # install from the local source tree
-      rm -rf wittypi
-      cp -r "$SRC_DIR" wittypi || ((ERR++))
+      # install from the local source tree, directly into the service root
+      # (trailing /. copies contents, including dotfiles, into $DIR)
+      cp -r "$SRC_DIR"/. "$DIR"/ || ((ERR++))
     else
       # The upstream fallback (download stock software from UUGear) was
       # removed for visIOn: stock software lacks every fork hardening
@@ -272,23 +271,18 @@ if [ $ERR -eq 0 ]; then
       echo '       Run via Software/deploy.sh, or set WITTYPI_SRC.'
       exit 1
     fi
-    cd wittypi
-    chmod +x wittyPi.sh
-    chmod +x daemon.sh
-    chmod +x runScript.sh
-    chmod +x beforeScript.sh
-    chmod +x afterStartup.sh
-    chmod +x beforeShutdown.sh
-    sed -e "s#/home/pi/vision/wittypi#$DIR#g" init.sh >/etc/init.d/wittypi
+    for f in wittyPi.sh daemon.sh runScript.sh beforeScript.sh afterStartup.sh beforeShutdown.sh; do
+      chmod +x "$DIR/$f"
+    done
+    sed -e "s#/home/pi/vision-service#$DIR#g" "$DIR/init.sh" >/etc/init.d/wittypi
     chmod +x /etc/init.d/wittypi
     update-rc.d wittypi defaults || ((ERR++))
-    touch wittyPi.log
-    touch schedule.log
-    # sync custom schedules (fresh install path - cwd is the wittypi install dir)
+    touch "$DIR/wittyPi.log"
+    touch "$DIR/schedule.log"
+    # sync custom schedules
     SCHED_SRC="$(dirname "$SRC_DIR")/../Schedules"
     echo '  Syncing schedules...'
-    sync_schedules "$SCHED_SRC" "schedules"
-    cd ..
+    sync_schedules "$SCHED_SRC" "$DIR/schedules"
     chown -R $SUDO_USER:$(id -g -n $SUDO_USER) "$VISION_HOME" || ((ERR++))
     sleep 2
   fi
