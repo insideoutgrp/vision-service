@@ -17,6 +17,8 @@
 #   camera.sh list            list supported parameter names
 #   camera.sh get <param>     show current value and available choices
 #   camera.sh set <param> <value>   set a parameter (value or choice index)
+#   camera.sh focus           list the 9 focus points and frame size
+#   camera.sh focus <point> [af]    move the focus square (optionally AF there)
 #   camera.sh on | off        camera power relay control
 #
 # Notes:
@@ -53,6 +55,48 @@ aemode|/main/capturesettings/autoexposuremode|Exposure mode (dial - usually read
 param_path()  { echo "$PARAMS" | grep "^$1|" | cut -d'|' -f2; }
 param_desc()  { echo "$PARAMS" | grep "^$1|" | cut -d'|' -f3; }
 param_names() { echo "$PARAMS" | grep -v '^$' | cut -d'|' -f1; }
+
+# ------------------------------------------------------------- focus points
+# The liveview focus square is moved with eoszoomposition=x,y in FULL-FRAME
+# pixel coordinates, so the grid must be computed from the sensor
+# resolution of the attached body - never hard-coded (1300D: 5184x3456,
+# 2000D: 6000x4000). Nine common points on a 3x3 grid at 1/6, 1/2 and 5/6
+# of the frame: name|x-sixths|y-sixths.
+FOCUS_POINTS='
+top-left|1|1
+top-centre|3|1
+top-right|5|1
+middle-left|1|3
+centre|3|3
+middle-right|5|3
+bottom-left|1|5
+bottom-centre|3|5
+bottom-right|5|5
+'
+focus_names() { echo "$FOCUS_POINTS" | grep -v '^$' | cut -d'|' -f1; }
+
+# sets FRAME_W / FRAME_H. Order: explicit override (CAMERA_FRAME_W/H in
+# buttonRelay.conf) > model lookup > logged 1300D fallback. Globals rather
+# than echo so the model-unknown path can log without polluting the result.
+camera_frame_size()
+{
+  if [ -n "$CAMERA_FRAME_W" ] && [ -n "$CAMERA_FRAME_H" ]; then
+    FRAME_W=$CAMERA_FRAME_W
+    FRAME_H=$CAMERA_FRAME_H
+    return
+  fi
+  local model=$(timeout $GPHOTO2_TIMEOUT gphoto2 --auto-detect 2>/dev/null | sed -n '3p')
+  case "$model" in
+    *2000D*|*'Rebel T7'*|*'Kiss X90'*)
+      FRAME_W=6000; FRAME_H=4000 ;;
+    *1300D*|*'Rebel T6'*|*'Kiss X80'*)
+      FRAME_W=5184; FRAME_H=3456 ;;
+    *)
+      FRAME_W=5184; FRAME_H=3456
+      log "Camera: WARN - unrecognised model for frame size ('${model:-none}'); assuming ${FRAME_W}x${FRAME_H}. Set CAMERA_FRAME_W/CAMERA_FRAME_H in buttonRelay.conf to override."
+      ;;
+  esac
+}
 
 # ---------------------------------------------------------------- camera power
 # The camera is powered through the button->relay watcher's relay. Reuse its
@@ -212,6 +256,53 @@ show_all_current()
   done
 }
 
+# set_focus_point <name> [af]: move the liveview focus square to a named
+# grid point; with 'af', also drive autofocus there. Assumes
+# ensure_camera_ready has run. The EOS only accepts a zoom/focus position
+# while liveview is up, so the viewfinder is raised around the operation
+# and dropped again afterwards (mirror down, saves battery and heat).
+set_focus_point()
+{
+  local name="$1" do_af="$2"
+  [ "$name" = "center" ] && name='centre'
+  local row=$(echo "$FOCUS_POINTS" | grep "^$name|")
+  if [ -z "$row" ]; then
+    echo "  Unknown focus point '$name'. Points:"
+    focus_names | sed 's/^/    /'
+    return 1
+  fi
+  camera_frame_size
+  local xs=$(echo "$row" | cut -d'|' -f2)
+  local ys=$(echo "$row" | cut -d'|' -f3)
+  local x=$((FRAME_W * xs / 6))
+  local y=$((FRAME_H * ys / 6))
+  # liveview up - without it the body rejects/ignores the position
+  if ! timeout $GPHOTO2_TIMEOUT gphoto2 --set-config viewfinder=1 2>/dev/null; then
+    log 'Camera: WARN - could not raise liveview (viewfinder=1); trying to set focus point anyway.'
+  fi
+  if timeout $GPHOTO2_TIMEOUT gphoto2 --set-config eoszoomposition=$x,$y 2>/dev/null; then
+    echo "  Focus square set to $name ($x,$y of ${FRAME_W}x${FRAME_H})."
+    log "Camera: focus square set to $name ($x,$y of ${FRAME_W}x${FRAME_H})."
+  else
+    echo "  ERROR: failed setting focus square (is liveview available in this mode?)."
+    log "Camera: FAILED setting focus square to $name ($x,$y)."
+    timeout $GPHOTO2_TIMEOUT gphoto2 --set-config viewfinder=0 2>/dev/null
+    return 1
+  fi
+  if [ "$do_af" = "af" ]; then
+    if timeout $GPHOTO2_TIMEOUT gphoto2 --set-config autofocusdrive=1 2>/dev/null; then
+      echo '  Autofocus driven at the new point.'
+      log "Camera: autofocus driven at $name."
+    else
+      echo '  WARN: autofocus drive failed (lens on MF, or no focus lock).'
+      log "Camera: WARN - autofocus drive at $name failed."
+    fi
+  fi
+  # liveview back down
+  timeout $GPHOTO2_TIMEOUT gphoto2 --set-config viewfinder=0 2>/dev/null
+  return 0
+}
+
 # ---------------------------------------------------------------- CLI actions
 do_status()
 {
@@ -271,6 +362,29 @@ do_list()
   for n in $(param_names); do
     printf '    %-11s %s\n' "$n" "$(param_desc $n)"
   done
+  echo '  Focus points (camera.sh focus <point> [af]):'
+  focus_names | sed 's/^/    /'
+}
+
+do_focus()
+{
+  local name="$1" do_af="$2"
+  if [ -z "$name" ]; then
+    ensure_camera_ready
+    camera_frame_size
+    echo "  Frame size: ${FRAME_W}x${FRAME_H}"
+    echo '  Focus points (3x3 grid at 1/6, 1/2, 5/6 of the frame):'
+    local p
+    for p in $(focus_names); do
+      local xs=$(echo "$FOCUS_POINTS" | grep "^$p|" | cut -d'|' -f2)
+      local ys=$(echo "$FOCUS_POINTS" | grep "^$p|" | cut -d'|' -f3)
+      printf '    %-14s %s,%s\n' "$p" "$((FRAME_W * xs / 6))" "$((FRAME_H * ys / 6))"
+    done
+    echo "  Usage: $0 focus <point> [af]"
+    return 0
+  fi
+  ensure_camera_ready
+  set_focus_point "$name" "$do_af"
 }
 
 # ---------------------------------------------------------------- interactive
@@ -297,12 +411,35 @@ interactive_menu()
       printf '  %2d. %-11s %-24s %s\n' $i "$n" "${cur:-<unreadable>}" "($(param_desc $n))"
       i=$((i + 1))
     done
+    echo '   f. Focus square (3x3 grid)'
     echo '   p. Power camera off and exit'
     echo '   q. Quit (leave camera powered)'
     read -p '  Choose a parameter to change: ' choice
     case "$choice" in
       q) exit 0 ;;
       p) camera_power_off; exit 0 ;;
+      f)
+        camera_frame_size
+        echo "  Focus points (frame ${FRAME_W}x${FRAME_H}):"
+        local pts=($(focus_names))
+        local j=1
+        local p
+        for p in "${pts[@]}"; do
+          printf '    %d. %s\n' $j "$p"
+          j=$((j + 1))
+        done
+        read -p '  Focus point (number, empty to cancel): ' fsel
+        [ -z "$fsel" ] && continue
+        if ! [[ "$fsel" =~ ^[1-9]$ ]] || [ "$fsel" -gt "${#pts[@]}" ]; then
+          echo '  Invalid choice.'
+          continue
+        fi
+        read -p '  Drive autofocus at the new point? (y/N) ' faf
+        local afarg=''
+        [[ "$faf" =~ ^[Yy]$ ]] && afarg='af'
+        set_focus_point "${pts[$((fsel - 1))]}" "$afarg"
+        continue
+        ;;
       ''|*[!0-9]*) echo '  Invalid choice.'; continue ;;
     esac
     if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#names[@]}" ]; then
@@ -340,10 +477,11 @@ case "$1" in
   list)     do_list ;;
   get)      do_get "$2" ;;
   set)      do_set "$2" "$3" ;;
+  focus)    do_focus "$2" "$3" ;;
   on)       ensure_camera_ready && echo '  Camera powered and ready.' ;;
   off)      camera_power_off ;;
   *)
-    echo "Usage: $0 [status|list|get <param>|set <param> <value>|on|off]"
+    echo "Usage: $0 [status|list|get <param>|set <param> <value>|focus [<point>] [af]|on|off]"
     echo "       $0            (no arguments: interactive menu)"
     exit 1
     ;;

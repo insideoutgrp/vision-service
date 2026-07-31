@@ -14,6 +14,24 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### v5.39 — 2026-07-31
+**Focus square selection** (`camera.sh focus <point> [af]`, plus an
+interactive-menu entry): moves the liveview focus square via
+`eoszoomposition=x,y`.
+- The coordinate space is the full sensor frame, so the grid is **computed
+  from the attached body's frame size**, never hard-coded: explicit
+  `CAMERA_FRAME_W/H` override (buttonRelay.conf) > model lookup
+  (1300D/T6 = 5184×3456, 2000D/T7 = 6000×4000) > logged 1300D fallback.
+- Nine named points on a 3×3 grid at 1/6, 1/2, 5/6 of the frame:
+  top/middle/bottom × left/centre/right (e.g. centre on a 1300D =
+  2592,1728; on a 2000D = 3000,2000).
+- Liveview (`viewfinder=1`) is raised around the operation — the EOS only
+  accepts a position while liveview is up — and dropped afterwards
+  (mirror down). Optional `af` argument drives autofocus at the new point
+  (`autofocusdrive=1`), with MF/no-lock failure reported.
+- `camera.sh focus` with no arguments prints the detected frame size and
+  the computed coordinates of all nine points.
+
 ### v5.38 — 2026-07-31
 **Camera control module** (`camera.sh`): view and change capture parameters
 on the attached Canon DSLR (EOS 1300D / 2000D) over USB via gphoto2 —

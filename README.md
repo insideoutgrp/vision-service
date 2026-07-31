@@ -42,6 +42,18 @@ interactive menu, or script it:
 Parameters: `iso`, `aperture`, `shutter`, `expcomp`, `wb`, `format`,
 `metering`, `style`, `drive`, `focusmode`, `target`, `aemode`.
 
+The liveview **focus square** can be moved to one of nine named points on
+a 3×3 grid (`top-left` … `centre` … `bottom-right`). The grid is computed
+from the attached body's sensor resolution (1300D 5184×3456, 2000D
+6000×4000 — auto-detected, `CAMERA_FRAME_W/H` in `buttonRelay.conf`
+overrides), since `eoszoomposition` works in full-frame pixel coordinates:
+
+```bash
+/home/pi/vision-service/camera.sh focus              # show frame size + all 9 points
+/home/pi/vision-service/camera.sh focus centre       # move the focus square
+/home/pi/vision-service/camera.sh focus top-left af  # move it and autofocus there
+```
+
 The camera is powered through the button→relay output (BCM 13 by default,
 from `buttonRelay.conf`): before any gphoto2 command the script energises
 the relay, waits for the camera to enumerate on USB (`lsusb`, Canon vendor
