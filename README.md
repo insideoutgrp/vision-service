@@ -79,6 +79,27 @@ If the camera was powered off, the logger powers it up for the read and
 back off afterwards. A camera that can't be reached writes one WARN line
 for that day rather than retrying (and cycling the relay) all day.
 
+**Shutter count**: `camera.sh shuttercount` reads the body's shutter
+actuation count; it is also shown in `camera.sh status` and recorded in
+every daily snapshot, so shutter wear per site is trackable straight from
+`cameraSettings.log`.
+
+## Auto-update
+
+Devices update themselves: a daily cron check (`autoUpdate.sh`, attempts
+at :12/:27/:42/:57, first completed check per day wins) probes the
+published `SOFTWARE_VERSION` on GitHub and, when it differs from the
+installed version, downloads and runs the standard deploy — with all of
+its version gating, per-file syntax checks, backups and crash-safety.
+**Publishing a release = pushing a bumped `SOFTWARE_VERSION` to `main`**;
+the fleet picks it up within a day (on next wake for scheduled devices).
+
+- Per-device opt-out: set `AUTO_UPDATE=0` in
+  `/home/pi/vision-service/autoUpdate.conf` (survives deploys)
+- Immediate manual check: `sudo /home/pi/vision-service/autoUpdate.sh force`
+- Devices at v5.40 or older need one final manual deploy (the one-liner
+  above) to receive the auto-updater; from then on updates are automatic
+
 Deploy (self-updating one-liner; safe to re-run; migrates legacy
 `/home/pi/wittypi` installs automatically — all per-device state is carried
 over, cron entries and the boot launcher are repointed, and the old install

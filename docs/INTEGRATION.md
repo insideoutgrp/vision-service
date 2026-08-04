@@ -74,6 +74,7 @@ survive any import/migration:
 | `buttonRelay.conf` | Button→relay per-device config (auto-created; deploy never touches it) |
 | `wittyPi.log`, `schedule.log` | Diagnostic history — the primary field forensics record |
 | `cameraSettings.log`, `.camera_log_date` | Daily camera-settings snapshots (drift detection) and its once-per-day stamp |
+| `autoUpdate.conf`, `.autoupdate_date` | Auto-update opt-out switch and its once-per-day check stamp |
 | `.net_fail_count`, `.net_reboot_log` | Connectivity-watchdog state (failure counter, daily reboot cap) |
 | `backup_v*/` | Pre-update script backups made by deploy |
 
@@ -84,6 +85,7 @@ survive any import/migration:
 */15 * * * *      /home/pi/vision-service/syncTime.sh      >> .../wittyPi.log 2>&1
 7,22,37,52 * * * * /home/pi/vision-service/checkInternet.sh >> .../wittyPi.log 2>&1
 5,20,35,50 * * * * /home/pi/vision-service/camera.sh logsettings >> .../wittyPi.log 2>&1
+12,27,42,57 * * * * /home/pi/vision-service/autoUpdate.sh >> .../wittyPi.log 2>&1
 ```
 
 **Shared resources** a parent project must respect:

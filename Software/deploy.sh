@@ -169,7 +169,7 @@ if [ ! -f "$VISION_HOME/utilities.sh" ] && [ -n "$LEGACY_DIR" ]; then
   pkill -f "$LEGACY_DIR/checkInternet.sh" 2>/dev/null || true
   # drop legacy cron entries immediately so cron cannot spawn the old
   # scripts mid-migration (the current entries are re-installed below)
-  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh' | grep -vF 'logsettings') | crontab - || true
+  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh' | grep -vF 'logsettings' | grep -vF 'autoUpdate.sh') | crontab - || true
   sleep 1
   mkdir -p "$VISION_HOME"
   # contents copy (trailing /.) - the runtime lands directly in the
@@ -228,21 +228,25 @@ if [ -n "$WITTYPI_DIR" ]; then
   chmod +x /etc/init.d/wittypi
   update-rc.d wittypi defaults >/dev/null 2>&1 || true
 
-  echo '>>> Setting up cron entries (time sync + connectivity watchdog + camera log)'
-  chmod +x "$WITTYPI_DIR/syncTime.sh" "$WITTYPI_DIR/checkInternet.sh" "$WITTYPI_DIR/camera.sh" 2>/dev/null || true
+  echo '>>> Setting up cron entries (time sync + connectivity watchdog + camera log + auto-update)'
+  chmod +x "$WITTYPI_DIR/syncTime.sh" "$WITTYPI_DIR/checkInternet.sh" "$WITTYPI_DIR/camera.sh" "$WITTYPI_DIR/autoUpdate.sh" 2>/dev/null || true
   CRON_CMD="$WITTYPI_DIR/syncTime.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
   NET_CHECK_CMD="$WITTYPI_DIR/checkInternet.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
   CAM_LOG_CMD="$WITTYPI_DIR/camera.sh logsettings >> $WITTYPI_DIR/wittyPi.log 2>&1"
+  AUTO_UPD_CMD="$WITTYPI_DIR/autoUpdate.sh >> $WITTYPI_DIR/wittyPi.log 2>&1"
   # remove any existing entries (whatever path they point at) then add the
-  # current ones; all three offsets chosen so no two jobs ever coincide.
-  # The camera snapshot is date-guarded internally - it runs to completion
-  # once per day and is a no-op statefile read the rest of the time.
-  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh' | grep -vF 'logsettings'; \
+  # current ones; the four offsets chosen so no two jobs ever coincide.
+  # The camera snapshot and auto-update are date-guarded internally - each
+  # runs to completion once per day and is a no-op statefile read the rest
+  # of the time.
+  (crontab -l 2>/dev/null | grep -vF 'syncTime.sh' | grep -vF 'checkInternet.sh' | grep -vF 'logsettings' | grep -vF 'autoUpdate.sh'; \
    echo "*/15 * * * * $CRON_CMD"; \
    echo "7,22,37,52 * * * * $NET_CHECK_CMD"; \
-   echo "5,20,35,50 * * * * $CAM_LOG_CMD") | crontab -
+   echo "5,20,35,50 * * * * $CAM_LOG_CMD"; \
+   echo "12,27,42,57 * * * * $AUTO_UPD_CMD") | crontab -
   echo '  Cron set: time sync every 15 min; internet check at :07/:22/:37/:52;'
-  echo '            daily camera settings snapshot (attempts at :05/:20/:35/:50).'
+  echo '            daily camera settings snapshot (attempts at :05/:20/:35/:50);'
+  echo '            daily auto-update check (attempts at :12/:27/:42/:57).'
   echo ''
 fi
 
@@ -265,7 +269,7 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
   # version-first order left new utilities + old scripts and every rerun
   # said "already up to date" - locking the mixed install in permanently.
   # With version-last, an interrupted deploy simply reruns.
-  UPDATE_FILES="daemon.sh runScript.sh wittyPi.sh syncTime.sh checkInternet.sh buttonRelay.sh camera.sh utilities.sh"
+  UPDATE_FILES="daemon.sh runScript.sh wittyPi.sh syncTime.sh checkInternet.sh buttonRelay.sh camera.sh autoUpdate.sh utilities.sh"
 
   # backup
   BACKUP_DIR="$WITTYPI_DIR/backup_v${CURRENT_VER:-old}_$(date +%Y%m%d_%H%M%S)"

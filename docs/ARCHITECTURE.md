@@ -39,7 +39,8 @@ firmware register map and pin map see
 | `syncTime.sh` | Network→system→RTC time sync | cron `*/15` |
 | `checkInternet.sh` | Connectivity watchdog: 3 consecutive failures → reboot (capped 2/day, 30-min uptime gate) | cron `:07/:22/:37/:52` |
 | `buttonRelay.sh` | Button (BCM 4) → relay (default BCM 13) watcher; per-device `buttonRelay.conf` | daemon-spawned, detached, single instance |
-| `camera.sh` | Canon DSLR (1300D/2000D) parameter control via gphoto2: relay power-up → USB detect → get/set with verify; focus-square selection (3×3 grid, resolution-aware); daily settings snapshot → `cameraSettings.log` | manual / scripted / cron `:05/:20/:35/:50` (date-guarded) |
+| `camera.sh` | Canon DSLR (1300D/2000D) parameter control via gphoto2: relay power-up → USB detect → get/set with verify; focus-square selection (3×3 grid, resolution-aware); shutter count; daily settings snapshot → `cameraSettings.log` | manual / scripted / cron `:05/:20/:35/:50` (date-guarded) |
+| `autoUpdate.sh` | Daily self-update: probes the published `SOFTWARE_VERSION` on GitHub (raw utilities.sh) and runs the standard deploy when it differs; per-device `autoUpdate.conf` opt-out | cron `:12/:27/:42/:57` (date-guarded) |
 | `wittyPi.sh` | Interactive menu (schedule choice, times, config) | manual |
 | `beforeScript.sh` / `afterStartup.sh` / `beforeShutdown.sh` | User extension hooks | daemon boot sequence |
 | `schedules/` | Deployed `.wpi` schedule catalogue (synced by deploy) | — |

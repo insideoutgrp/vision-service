@@ -14,6 +14,28 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### v5.41 — 2026-08-02
+**Shutter count + fleet auto-update.**
+- `camera.sh shuttercount` reads the body's shutter actuation count
+  (`/main/status/shuttercounter`); also shown in `camera.sh status` and
+  the interactive-menu header, and recorded in every daily
+  `cameraSettings.log` snapshot (excluded from CHANGED detection, like
+  battery — wear is tracked by the daily line itself, giving frames/day
+  straight from the log).
+- **`autoUpdate.sh`**: devices now update themselves when a new version is
+  published (= a bumped `SOFTWARE_VERSION` pushed to `main`). Cron
+  attempts at :12/:27/:42/:57, date-stamped to one completed check per
+  day (an offline check does not stamp — it retries next tick, so short
+  wake windows still get their daily check). The remote version is probed
+  by fetching raw `utilities.sh` (~30 KB); the full deploy only runs when
+  versions differ, downloaded to a temp file and syntax-checked first —
+  never piped from the network. deploy.sh's own version gate, atomicity
+  and interrupt-safety make a mid-update power cut recoverable.
+  Per-device opt-out: `AUTO_UPDATE=0` in `autoUpdate.conf`. Manual:
+  `autoUpdate.sh force`.
+- Note: devices at ≤ v5.40 need **one final manual deploy** to receive
+  the auto-updater; from then on updates are automatic.
+
 ### v5.40 — 2026-07-31
 **Daily camera-settings snapshot** (`camera.sh logsettings` + cron): one
 compact `key='value'` line per day in a separate **`cameraSettings.log`**

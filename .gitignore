@@ -7,6 +7,8 @@ wittyPi.log
 schedule.log
 cameraSettings.log
 .camera_log_date
+autoUpdate.conf
+.autoupdate_date
 .net_fail_count
 .net_reboot_log
 backup_v*/

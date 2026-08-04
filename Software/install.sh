@@ -153,7 +153,7 @@ SRC_DIR="${WITTYPI_SRC:-$SCRIPT_DIR/wittypi}"
 # v5.29: utilities.sh last - it carries SOFTWARE_VERSION, and copying it
 # first meant an interrupted update looked "already up to date" on rerun
 # while the other scripts were still the old version.
-UPDATE_FILES="daemon.sh runScript.sh wittyPi.sh syncTime.sh checkInternet.sh buttonRelay.sh camera.sh utilities.sh"
+UPDATE_FILES="daemon.sh runScript.sh wittyPi.sh syncTime.sh checkInternet.sh buttonRelay.sh camera.sh autoUpdate.sh utilities.sh"
 
 # Sync $src_dir/*.wpi into $dst_dir/, exactly:
 #   - removes .wpi files on device not present in source
@@ -279,7 +279,7 @@ if [ $ERR -eq 0 ]; then
       echo '       Run via Software/deploy.sh, or set WITTYPI_SRC.'
       exit 1
     fi
-    for f in wittyPi.sh daemon.sh runScript.sh beforeScript.sh afterStartup.sh beforeShutdown.sh camera.sh; do
+    for f in wittyPi.sh daemon.sh runScript.sh beforeScript.sh afterStartup.sh beforeShutdown.sh camera.sh autoUpdate.sh; do
       chmod +x "$DIR/$f"
     done
     sed -e "s#/home/pi/vision-service#$DIR#g" "$DIR/init.sh" >/etc/init.d/wittypi
@@ -317,6 +317,13 @@ echo '>>> Setting up daily camera settings snapshot'
 CAM_LOG_CMD="$DIR/camera.sh logsettings >> $DIR/wittyPi.log 2>&1"
 (crontab -l 2>/dev/null | grep -vF 'logsettings'; echo "5,20,35,50 * * * * $CAM_LOG_CMD") | crontab -
 echo '  Cron job set: camera settings snapshot attempts at :05/:20/:35/:50.'
+
+# set up cron job for the daily auto-update check (date-guarded in
+# autoUpdate.sh; full deploy only runs when the published version differs)
+echo '>>> Setting up daily auto-update check'
+AUTO_UPD_CMD="$DIR/autoUpdate.sh >> $DIR/wittyPi.log 2>&1"
+(crontab -l 2>/dev/null | grep -vF 'autoUpdate.sh'; echo "12,27,42,57 * * * * $AUTO_UPD_CMD") | crontab -
+echo '  Cron job set: auto-update check attempts at :12/:27/:42/:57.'
 
 # NOTE: the upstream UUGear Web Interface (UWI) install step was removed for
 # visIOn — these are headless, unattended field devices and piping a

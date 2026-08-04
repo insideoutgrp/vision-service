@@ -21,6 +21,7 @@
 #   camera.sh focus <point> [af]    move the focus square (optionally AF there)
 #   camera.sh logsettings     daily settings snapshot to cameraSettings.log
 #                             (cron-driven; no-op if already logged today)
+#   camera.sh shuttercount    read the body's shutter actuation count
 #   camera.sh on | off        camera power relay control
 #
 # Notes:
@@ -306,6 +307,11 @@ set_focus_point()
 }
 
 # ---------------------------------------------------------------- CLI actions
+shutter_count()
+{
+  get_config /main/status/shuttercounter | sed -n 's/^Current: //p'
+}
+
 do_status()
 {
   echo "  Power relay:  $(camera_power_state) (BCM $CAMERA_RELAY_PIN)"
@@ -316,8 +322,22 @@ do_status()
     return 0
   fi
   ensure_camera_ready
+  echo "  Lens:         $(get_config /main/status/lensname | sed -n 's/^Current: //p')"
+  echo "  Shutter count: $(shutter_count)"
   echo '  Current settings:'
   show_all_current
+}
+
+do_shuttercount()
+{
+  ensure_camera_ready
+  local sc=$(shutter_count)
+  if [ -z "$sc" ]; then
+    echo '  ERROR: could not read the shutter counter from the camera.'
+    exit 1
+  fi
+  echo "  Shutter count: $sc"
+  log "Camera: shutter count $sc."
 }
 
 do_get()
@@ -401,7 +421,7 @@ interactive_menu()
   echo '================================================================================'
   ensure_camera_ready
   local model=$(timeout $GPHOTO2_TIMEOUT gphoto2 --auto-detect 2>/dev/null | sed -n '3p' | sed 's/  *usb.*//')
-  [ -n "$model" ] && echo "  Camera: $model"
+  [ -n "$model" ] && echo "  Camera: $model (shutter count: $(shutter_count))"
   while true; do
     echo ''
     echo '  Current settings:'
@@ -518,19 +538,21 @@ do_logsettings()
   local model=$(timeout $GPHOTO2_TIMEOUT gphoto2 --auto-detect 2>/dev/null | sed -n '3p' | sed 's/  *usb.*//;s/  *$//')
   local lens=$(get_config /main/status/lensname | sed -n 's/^Current: //p')
   local batt=$(get_config /main/status/batterylevel | sed -n 's/^Current: //p')
+  local sc=$(shutter_count)
   local pairs="model='${model:-?}' lens='${lens:-?}'"
   local n cur
   for n in $(param_names); do
     cur=$(get_config "$(param_path $n)" | sed -n 's/^Current: //p')
     pairs="$pairs $n='${cur:-?}'"
   done
-  # battery last and excluded from change detection - it drifts every day
-  settings_log_line "$pairs battery='${batt:-?}'"
+  # shuttercount + battery last and excluded from change detection - both
+  # move naturally every day (shutter wear is tracked BY the daily line)
+  settings_log_line "$pairs shuttercount='${sc:-?}' battery='${batt:-?}'"
   echo "$today" > "$SETTINGS_STAMP"
   log 'Camera: daily settings snapshot written to cameraSettings.log.'
   # change detection vs the previous snapshot (ignore WARN/CHANGED lines)
   local prev=$(grep " model='" "$SETTINGS_LOG" | tail -2 | head -1 | sed 's/^\[[^]]*\] //')
-  if [ -n "$prev" ] && [ "$(echo "$prev" | sed "s/ battery='[^']*'//")" != "$pairs" ]; then
+  if [ -n "$prev" ] && [ "$(echo "$prev" | sed "s/ shuttercount='[^']*'//;s/ battery='[^']*'//")" != "$pairs" ]; then
     local changed='' k pv cv
     for k in model lens $(param_names); do
       pv=$(extract_val "$prev" "$k")
@@ -555,10 +577,11 @@ case "$1" in
   set)      do_set "$2" "$3" ;;
   focus)    do_focus "$2" "$3" ;;
   logsettings) do_logsettings ;;
+  shuttercount) do_shuttercount ;;
   on)       ensure_camera_ready && echo '  Camera powered and ready.' ;;
   off)      camera_power_off ;;
   *)
-    echo "Usage: $0 [status|list|get <param>|set <param> <value>|focus [<point>] [af]|logsettings|on|off]"
+    echo "Usage: $0 [status|list|get <param>|set <param> <value>|focus [<point>] [af]|logsettings|shuttercount|on|off]"
     echo "       $0            (no arguments: interactive menu)"
     exit 1
     ;;
