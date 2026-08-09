@@ -316,6 +316,22 @@ if [ $ERR -eq 0 ]; then
   fi
 fi
 
+# v5.43: install/refresh the connector (iovision fleet module). Code lands on
+# every device; it only runs where /etc/iovision/config.yaml exists (written
+# at enrolment, which also installs vision-connector.service).
+CONN_SRC="$(dirname "$SRC_DIR")/connector"
+if [ -d "$CONN_SRC" ]; then
+  echo '>>> Installing connector (iovision fleet module)'
+  mkdir -p "$DIR/connector"
+  cp "$CONN_SRC"/agent.py "$CONN_SRC"/collect.sh "$CONN_SRC"/vision-connector.service "$DIR/connector/" 2>/dev/null || ((ERR++))
+  [ -f "$CONN_SRC/README.md" ] && cp "$CONN_SRC/README.md" "$DIR/connector/"
+  if ! python3 -c 'import requests, yaml' 2>/dev/null; then
+    apt-get install -y -qq python3-requests python3-yaml >/dev/null 2>&1 \
+      || echo '  WARN: connector deps (python3-requests python3-yaml) failed to install.'
+  fi
+  chown -R $SUDO_USER:$(id -g -n $SUDO_USER) "$DIR/connector" 2>/dev/null
+fi
+
 # set up cron job for periodic time sync
 echo '>>> Setting up periodic time sync'
 CRON_CMD="$DIR/syncTime.sh >> $DIR/wittyPi.log 2>&1"

@@ -14,6 +14,25 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### v5.43 — 2026-08-10
+**The connector — iovision fleet module ships with the runtime**
+(`Software/connector/` → `/home/pi/vision-service/connector/`). The iovision
+management agent (telemetry, command queue: schedules/camera/logs) moves into
+this repository and rides the standard update channel — deploy.sh/autoUpdate.sh
+update it with the same atomic `.new` + syntax-gate rules (python files gated
+with `py_compile`). This retires the agent's separate `update_agent` mechanism
+(one field-hardened update path instead of two; the connector rejects the old
+command with a pointer here).
+- **Code on every device, running only where enrolled**: the connector starts
+  solely where `/etc/iovision/config.yaml` exists. Enrolment (from the iovision
+  dashboard) writes credentials and enables `vision-connector.service` — code
+  is already present via auto-update, so enrolling is a config-drop.
+- Deploy migrates pre-v5.43 enrolled devices automatically: legacy
+  `iovision-agent.service` + `iovision/` dir retired, connector service
+  installed and (re)started.
+- New deps: `python3-requests`, `python3-yaml` (apt; installed by both
+  install.sh and deploy.sh).
+
 ### v5.42 — 2026-08-09
 **Camera snapshot state files writable by both writers.** `cameraSettings.log`
 and `.camera_log_date` are written by the root cron AND by operator/agent runs

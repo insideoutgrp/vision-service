@@ -324,6 +324,55 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
     apt install -y gphoto2 || echo '  WARN: gphoto2 install failed - camera.sh needs it; rerun deploy or install manually.'
   fi
 
+  # v5.43: the connector (iovision fleet module) ships with the runtime.
+  # Code lands on EVERY device; it only RUNS where /etc/iovision/config.yaml
+  # exists (written at enrolment). Same atomic .new + syntax-gate rules;
+  # python files are gated with py_compile.
+  if [ -d "$SRC_DIR/connector" ]; then
+    echo ''
+    echo '>>> Updating connector (iovision fleet module)'
+    mkdir -p "$WITTYPI_DIR/connector"
+    for f in agent.py collect.sh vision-connector.service README.md; do
+      if [ -f "$SRC_DIR/connector/$f" ]; then
+        cp "$SRC_DIR/connector/$f" "$WITTYPI_DIR/connector/$f.new"
+        CONN_OK=1
+        case "$f" in
+          *.py) python3 -m py_compile "$WITTYPI_DIR/connector/$f.new" 2>/dev/null || CONN_OK=0 ;;
+          *.sh) bash -n "$WITTYPI_DIR/connector/$f.new" 2>/dev/null || CONN_OK=0 ;;
+        esac
+        if [ $CONN_OK -eq 1 ]; then
+          mv "$WITTYPI_DIR/connector/$f.new" "$WITTYPI_DIR/connector/$f"
+          echo "  Updated connector/$f"
+        else
+          rm -f "$WITTYPI_DIR/connector/$f.new"
+          echo "  SKIPPED connector/$f (syntax check failed - keeping previous version)"
+          ((ERR++)) 2>/dev/null || true
+        fi
+      fi
+    done
+    rm -rf "$WITTYPI_DIR/connector/__pycache__"
+    if ! python3 -c 'import requests, yaml' 2>/dev/null; then
+      echo '  Installing connector dependencies (python3-requests python3-yaml)'
+      apt install -y python3-requests python3-yaml || echo '  WARN: connector deps install failed - rerun deploy or install manually.'
+    fi
+    # Enrolled devices: migrate from the pre-v5.43 agent layout (iovision/
+    # dir + iovision-agent.service) and (re)start the connector service so
+    # it picks up the updated code.
+    if [ -f /etc/iovision/config.yaml ]; then
+      if [ -f /etc/systemd/system/iovision-agent.service ]; then
+        systemctl disable --now iovision-agent.service 2>/dev/null || true
+        rm -f /etc/systemd/system/iovision-agent.service
+        echo '  Retired legacy iovision-agent.service.'
+      fi
+      rm -rf "$WITTYPI_DIR/iovision"
+      cp "$WITTYPI_DIR/connector/vision-connector.service" /etc/systemd/system/vision-connector.service
+      systemctl daemon-reload 2>/dev/null || true
+      systemctl enable vision-connector.service 2>/dev/null || true
+      systemctl restart vision-connector.service 2>/dev/null || true
+      echo '  Connector (re)started for this enrolled device.'
+    fi
+  fi
+
   # fix ownership
   if [ ! -z "$SUDO_USER" ]; then
     chown -R $SUDO_USER:$(id -g -n $SUDO_USER) "$WITTYPI_DIR" 2>/dev/null

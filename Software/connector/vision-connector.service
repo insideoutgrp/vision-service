@@ -1,0 +1,16 @@
+# /etc/systemd/system/vision-connector.service — installed at ENROLMENT only
+# (the connector code ships with vision-service on every device, but runs
+# solely where /etc/iovision/config.yaml exists).
+[Unit]
+Description=visIOn connector (iovision fleet telemetry + commands)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+ExecStart=/usr/bin/python3 /home/pi/vision-service/connector/agent.py -c /etc/iovision/config.yaml
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
