@@ -14,6 +14,20 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### install.sh source validation — 2026-08-06
+(No SOFTWARE_VERSION bump: changes the installer only; fresh installs fetch
+it from main directly, deployed devices are unaffected.)
+- `install.sh` now verifies its source tree is a genuine visIOn v5 tree
+  (`utilities.sh` + `camera.sh` + `autoUpdate.sh`) before copying. Previously,
+  piping the script from curl on a device with a legacy `~/wittypi` install
+  resolved `SRC_DIR` to the caller's cwd and **silently installed the old v4
+  tree as the runtime** (field report: chmod failures on the v5-only files,
+  no schedules synced).
+- With no valid local source (the curl-pipe fresh-install case), it downloads
+  main from GitHub to a temp dir and re-execs from there — making
+  `curl -sSL .../Software/install.sh | sudo bash` a genuine one-liner.
+  Download failure aborts loudly; nothing is installed.
+
 ### v5.41 — 2026-08-02
 **Shutter count + fleet auto-update.**
 - `camera.sh shuttercount` reads the body's shutter actuation count

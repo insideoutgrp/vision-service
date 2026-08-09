@@ -149,6 +149,26 @@ fi
 # install target ($DIR).
 SRC_DIR="${WITTYPI_SRC:-$SCRIPT_DIR/wittypi}"
 
+# The source must be a genuine visIOn v5 tree, not whatever wittypi/ folder
+# happens to sit in the caller's cwd. Without this check, piping this script
+# from curl on a device with a LEGACY ~/wittypi install made SRC_DIR resolve
+# to the old v4 tree and silently installed it as the runtime (v5-only files
+# like camera.sh/autoUpdate.sh then missing). If no valid source is present
+# — the curl-pipe fresh-install case — download main and re-exec from it.
+is_vision_src() {
+  [ -f "$1/utilities.sh" ] && [ -f "$1/camera.sh" ] && [ -f "$1/autoUpdate.sh" ]
+}
+if ! is_vision_src "$SRC_DIR"; then
+  echo '>>> No local visIOn source tree beside this script - fetching main from GitHub'
+  FETCH_TMP=$(mktemp -d)
+  if ! curl -sSL --fail https://github.com/insideoutgrp/vision-service/archive/refs/heads/main.tar.gz \
+      | tar xz -C "$FETCH_TMP"; then
+    echo 'ERROR: download failed - nothing installed. (Offline? Run from a repo checkout instead.)'
+    exit 1
+  fi
+  exec bash "$FETCH_TMP"/vision-service-*/Software/install.sh
+fi
+
 # scripts that carry the DST fix (v4.24)
 # v5.29: utilities.sh last - it carries SOFTWARE_VERSION, and copying it
 # first meant an interrupted update looked "already up to date" on rerun
