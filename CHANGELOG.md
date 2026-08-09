@@ -14,6 +14,13 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### v5.44 — 2026-08-10
+**Connector 2.1: snapshot timestamp in telemetry.** The camera settings dict
+now includes `snapshot_at` (the `[...]` timestamp of the cameraSettings.log
+line it came from), so UIs can show how fresh the displayed settings are —
+"unknown values from a fresh read" and "stale snapshot" are no longer
+indistinguishable.
+
 ### v5.43 — 2026-08-10
 **The connector — iovision fleet module ships with the runtime**
 (`Software/connector/` → `/home/pi/vision-service/connector/`). The iovision

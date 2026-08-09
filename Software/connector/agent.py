@@ -23,7 +23,7 @@ import yaml
 
 log = logging.getLogger("connector")
 
-AGENT_VERSION = "2.0"  # connector era: updates ride vision-service autoUpdate
+AGENT_VERSION = "2.1"  # connector era: updates ride vision-service autoUpdate
 HERE = Path(__file__).resolve().parent
 LOG_FILES = {"wittyPi.log", "schedule.log", "cameraSettings.log"}  # tail allowlist
 SHIP_LOG = "wittyPi.log"
@@ -63,7 +63,13 @@ class Agent:
             report["collect_error"] = str(e)[:200]
         snap = report.pop("camera_snapshot", "")
         if snap:
-            report["camera"] = dict(re.findall(r"(\w+)='([^']*)'", snap))
+            cam = dict(re.findall(r"(\w+)='([^']*)'", snap))
+            # the snapshot line is timestamped "[YYYY-MM-DD HH:MM:SS] ..." —
+            # surface it so UIs can show how fresh the settings are
+            m = re.match(r"^\[([^\]]+)\]", snap)
+            if m:
+                cam["snapshot_at"] = m.group(1)
+            report["camera"] = cam
         report["log_delta"] = self._log_delta()
         return report
 
