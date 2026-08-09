@@ -504,6 +504,17 @@ SETTINGS_STAMP="$cur_dir/.camera_log_date"
 settings_log_line()
 {
   echo "[$(TZ=$LOCAL_TZ date +'%Y-%m-%d %H:%M:%S')] $1" >> "$SETTINGS_LOG"
+  # Two writers share these state files: the root cron and operator/agent runs
+  # as pi. Whoever creates them must leave them writable for the other, or the
+  # loser gets "Permission denied" on every append (same philosophy as the
+  # world-writable I2C lock). chmod only works for the owner - ignore failure.
+  chmod 666 "$SETTINGS_LOG" 2>/dev/null
+}
+
+stamp_today()
+{
+  echo "$1" > "$SETTINGS_STAMP"
+  chmod 666 "$SETTINGS_STAMP" 2>/dev/null
 }
 
 # extract_val "<line>" <key>: value of key='...' in a snapshot line
@@ -520,7 +531,7 @@ do_logsettings()
   local up=$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 999)
   [ "$up" -lt 60 ] && exit 0   # no stamp - retry on the next cron tick
   if ! hash gphoto2 2>/dev/null || ! hash gpio 2>/dev/null; then
-    echo "$today" > "$SETTINGS_STAMP"
+    stamp_today "$today"
     settings_log_line 'WARN gphoto2/gpio not installed - no settings snapshot today.'
     exit 0
   fi
@@ -528,7 +539,7 @@ do_logsettings()
   # on failure: stamp anyway, one failure line per day. Retrying hourly on
   # a dead/absent camera would just cycle the relay and drain the battery.
   if ! camera_power_on; then
-    echo "$today" > "$SETTINGS_STAMP"
+    stamp_today "$today"
     settings_log_line 'WARN camera not detected on USB - no settings snapshot today.'
     log 'Camera: daily settings snapshot skipped - camera not detected.'
     [ "$prev_power" = "off" ] && camera_power_off
@@ -548,7 +559,7 @@ do_logsettings()
   # shuttercount + battery last and excluded from change detection - both
   # move naturally every day (shutter wear is tracked BY the daily line)
   settings_log_line "$pairs shuttercount='${sc:-?}' battery='${batt:-?}'"
-  echo "$today" > "$SETTINGS_STAMP"
+  stamp_today "$today"
   log 'Camera: daily settings snapshot written to cameraSettings.log.'
   # change detection vs the previous snapshot (ignore WARN/CHANGED lines)
   local prev=$(grep " model='" "$SETTINGS_LOG" | tail -2 | head -1 | sed 's/^\[[^]]*\] //')

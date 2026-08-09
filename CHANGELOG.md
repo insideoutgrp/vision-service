@@ -14,6 +14,16 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### v5.42 — 2026-08-09
+**Camera snapshot state files writable by both writers.** `cameraSettings.log`
+and `.camera_log_date` are written by the root cron AND by operator/agent runs
+as `pi`; whichever created the file first locked the other out ("Permission
+denied" on every append — field report: agent-triggered `logsettings` printed
+its success message while the snapshot line silently failed to land, and the
+snapshot only refreshed when the root cron happened to run). `settings_log_line`
+and the new `stamp_today` helper now `chmod 666` the files after writing (owner-
+only op, failure ignored) — same philosophy as the world-writable I2C lock.
+
 ### install.sh source validation — 2026-08-06
 (No SOFTWARE_VERSION bump: changes the installer only; fresh installs fetch
 it from main directly, deployed devices are unaffected.)
