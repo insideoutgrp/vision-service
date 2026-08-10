@@ -22,6 +22,16 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.46 — 2026-08-10
+**Connector 2.2: network health telemetry.** Two signal-quality measures for
+tracking degradation over time on metered SIMs:
+- `net_post_ms` / `net_post_bytes` — timing of the previous telemetry POST,
+  reported every cycle. Zero extra data: it measures traffic we already send.
+- `net_dl_kbps` — micro download test (128 KB from `/v1/speedtest`), at most
+  once per UTC day at a randomized awake cycle (1-in-24 dice per 5-min cycle),
+  so timing is irregular and duty-cycled devices test whenever awake.
+  ~4 MB/month per device.
+
 ### v5.45 — 2026-08-10
 **Connector: internal IP in telemetry.** collect.sh now reports
 `internal_ip` (source address of the default route, `hostname -I` fallback),

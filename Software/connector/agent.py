@@ -10,6 +10,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import re
 import subprocess
 import sys
@@ -23,7 +24,8 @@ import yaml
 
 log = logging.getLogger("connector")
 
-AGENT_VERSION = "2.1"  # connector era: updates ride vision-service autoUpdate
+AGENT_VERSION = "2.2"  # connector era: updates ride vision-service autoUpdate
+SPEEDTEST_KB = 128     # ~4 MB/month/device at one test per day — SIMs pay per MB
 HERE = Path(__file__).resolve().parent
 LOG_FILES = {"wittyPi.log", "schedule.log", "cameraSettings.log"}  # tail allowlist
 SHIP_LOG = "wittyPi.log"
@@ -71,6 +73,13 @@ class Agent:
                 cam["snapshot_at"] = m.group(1)
             report["camera"] = cam
         report["log_delta"] = self._log_delta()
+        # Network health piggybacked on our own traffic: timing of the previous
+        # telemetry POST (continuous, costs nothing) and the latest micro
+        # speed test (one-shot — reported once, not repeated every cycle).
+        report.update(getattr(self, "_last_post", {}))
+        if getattr(self, "_last_speedtest", None):
+            report.update(self._last_speedtest)
+            self._last_speedtest = None
         return report
 
     def _log_delta(self) -> str:
@@ -115,18 +124,53 @@ class Agent:
                 reports.append(json.loads(f.read_text()))
             except Exception:
                 f.unlink()
+        # Pre-encode so we know the exact byte count, and time the POST —
+        # a free upload latency/throughput proxy on traffic we already pay for.
+        payload = json.dumps({"reports": reports})
+        t0 = time.monotonic()
         try:
-            r = self.session.post(f"{self.server}/v1/telemetry",
-                                  json={"reports": reports}, timeout=30)
+            r = self.session.post(f"{self.server}/v1/telemetry", data=payload,
+                                  headers={"Content-Type": "application/json"},
+                                  timeout=30)
             r.raise_for_status()
         except Exception as e:
             log.warning("telemetry send failed (%d spooled): %s", len(files), e)
             return False
+        self._last_post = {"net_post_ms": round((time.monotonic() - t0) * 1000),
+                           "net_post_bytes": len(payload)}
         for f in batch:
             f.unlink(missing_ok=True)
         self._commit_log_offset()
         log.info("sent %d report(s), %d still spooled", len(batch), len(files) - len(batch))
         return True
+
+    def maybe_speedtest(self) -> None:
+        """Micro download test: at most once per UTC day, fired at a random
+        awake cycle (1-in-24 dice per 5-min cycle) so the timing is irregular
+        and duty-cycled devices run it whenever they happen to be awake.
+        128 KB/day ≈ 4 MB/month — the SIMs bill per MB, keep it small."""
+        stamp = self.data_dir / "speedtest_date"
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        try:
+            if stamp.read_text().strip() == today:
+                return
+        except Exception:
+            pass
+        if random.random() > 1 / 24:
+            return
+        try:
+            t0 = time.monotonic()
+            r = self.session.get(f"{self.server}/v1/speedtest?kb={SPEEDTEST_KB}",
+                                 timeout=60)
+            r.raise_for_status()
+            elapsed = max(time.monotonic() - t0, 0.001)
+            self._last_speedtest = {
+                "net_dl_kbps": round(len(r.content) * 8 / 1000 / elapsed, 1)}
+            stamp.write_text(today)
+            log.info("speedtest: %d bytes in %.2fs (%.0f kbps)",
+                     len(r.content), elapsed, self._last_speedtest["net_dl_kbps"])
+        except Exception as e:
+            log.warning("speedtest failed: %s", e)
 
     # ---------------------------------------------------------- commands
 
@@ -231,6 +275,7 @@ class Agent:
     def cycle(self) -> None:
         self.spool_report(self.collect())
         self.drain()
+        self.maybe_speedtest()
         self.run_commands()
 
     def run(self) -> None:
