@@ -14,6 +14,14 @@ have their own section at the end. Dates are commit dates.
 
 ## Pi software
 
+### deploy.sh connector healing — 2026-08-10
+(No SOFTWARE_VERSION bump: deploy-script-only change, fetched fresh each run.)
+Enrolled device with connector code present but service not running (e.g. a
+migration stopped the legacy agent without the new unit starting, or an
+interrupted deploy) is now healed in the idempotent pre-version-gate block —
+previously a deploy re-run exited "already at vX.Y" before the connector
+block and could not repair this state.
+
 ### v5.44 — 2026-08-10
 **Connector 2.1: snapshot timestamp in telemetry.** The camera settings dict
 now includes `snapshot_at` (the `[...]` timestamp of the cameraSettings.log

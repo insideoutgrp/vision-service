@@ -248,6 +248,23 @@ if [ -n "$WITTYPI_DIR" ]; then
   echo '            daily camera settings snapshot (attempts at :05/:20/:35/:50);'
   echo '            daily auto-update check (attempts at :12/:27/:42/:57).'
   echo ''
+
+  # v5.44: heal the connector service pre-version-gate. If this device is
+  # enrolled (config present) and the connector code exists but its service
+  # is not running — e.g. a migration that stopped the legacy agent without
+  # the new unit coming up, or an interrupted deploy — a re-run must fix it
+  # even when the software version is already current (the update-path
+  # connector block below never runs in that case).
+  if [ -f /etc/iovision/config.yaml ] && [ -f "$WITTYPI_DIR/connector/agent.py" ]; then
+    if ! systemctl is-active vision-connector.service >/dev/null 2>&1; then
+      echo '>>> Connector enrolled but not running - starting it'
+      cp "$WITTYPI_DIR/connector/vision-connector.service" /etc/systemd/system/vision-connector.service 2>/dev/null || true
+      systemctl daemon-reload 2>/dev/null || true
+      systemctl enable --now vision-connector.service 2>/dev/null \
+        && echo '  Connector started.' \
+        || echo '  WARN: connector failed to start - check: systemctl status vision-connector'
+    fi
+  fi
 fi
 
 if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
