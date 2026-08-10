@@ -22,6 +22,13 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.45 — 2026-08-10
+**Connector: internal IP in telemetry.** collect.sh now reports
+`internal_ip` (source address of the default route, `hostname -I` fallback),
+letting the server classify which router/network each device sits behind
+(office wifi vs Unifi vs 4G routers) from its subnet. No agent code change —
+the connector forwards all collector key=value pairs.
+
 ### v5.44 — 2026-08-10
 **Connector 2.1: snapshot timestamp in telemetry.** The camera settings dict
 now includes `snapshot_at` (the `[...]` timestamp of the cameraSettings.log
