@@ -10,6 +10,7 @@ echo "uptime_s=$(cut -d. -f1 /proc/uptime)"
 echo "disk_free_mb=$(df -m / | awk 'NR==2{print $4}')"
 echo "kernel=$(uname -r)"
 echo "pi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)"
+echo "os_release=$(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
 # Primary internal IP — the server maps subnet -> router type (site network).
 ip_addr=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="src"){print $(i+1); exit}}')
 [ -z "$ip_addr" ] && ip_addr=$(hostname -I 2>/dev/null | awk '{print $1}')

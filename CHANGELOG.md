@@ -22,6 +22,11 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.47 — 2026-08-11
+**Connector: OS release in telemetry.** collect.sh now reports `os_release`
+(PRETTY_NAME from /etc/os-release) alongside the existing `pi_model` and
+`kernel`, so the fleet UI can show hardware + distro per device.
+
 ### v5.46 — 2026-08-10
 **Connector 2.2: network health telemetry.** Two signal-quality measures for
 tracking degradation over time on metered SIMs:
