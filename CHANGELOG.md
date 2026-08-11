@@ -22,6 +22,16 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### deploy.sh: never install to /root — 2026-08-11
+(No SOFTWARE_VERSION bump: deploy-script-only change, fetched fresh each run.)
+Nightly auto-update runs (root cron, no SUDO_USER) resolved TARGET_HOME to
+/root and deployed a full shadow runtime at /root/vision-service — the
+deploy reported success while the real install at /home/pi/vision-service
+stayed on the old version (observed on both pre-v5.43-migrated bench
+devices, whose 00:12 checks "updated" v5.44→v5.46 invisibly). TARGET_HOME
+now never resolves to /root, and any existing shadow tree is killed by path
+and removed on the next deploy.
+
 ### v5.47 — 2026-08-11
 **Connector: OS release in telemetry.** collect.sh now reports `os_release`
 (PRETTY_NAME from /etc/os-release) alongside the existing `pi_model` and

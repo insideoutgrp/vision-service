@@ -101,13 +101,29 @@ if command -v i2cget >/dev/null 2>&1; then
   fi
 fi
 
-# resolve the visIOn service root for the target (non-root) user
+# resolve the visIOn service root for the target (non-root) user.
+# NEVER resolve to /root: cron and root-shell runs have no SUDO_USER, and
+# before 2026-08-11 they quietly built a second runtime at
+# /root/vision-service while the real install (the one the daemon, cron and
+# connector actually use) stayed stale. The fleet standard is the pi home.
 TARGET_USER="${SUDO_USER:-$(id -un)}"
 TARGET_HOME="$(eval echo "~${TARGET_USER}")"
-if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
+if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ] || [ "$TARGET_HOME" = "/root" ]; then
   TARGET_HOME='/home/pi'
 fi
 VISION_HOME="${VISION_HOME:-$TARGET_HOME/vision-service}"
+
+# retire a stray shadow install left by those pre-fix root-cron deploys:
+# kill anything launched from it, then remove the tree. The live install is
+# never at /root, so this is always dead weight (its daemon may be running
+# and fighting the real one over I2C).
+if [ "$VISION_HOME" != "/root/vision-service" ] && [ -f /root/vision-service/utilities.sh ]; then
+  echo '>>> Retiring stray shadow install at /root/vision-service (root-cron artefact)'
+  pkill -f '/root/vision-service/' 2>/dev/null || true
+  sleep 1
+  rm -rf /root/vision-service
+  echo '  Removed.'
+fi
 
 # download the repo
 echo ">>> Downloading from $REPO_URL"
