@@ -22,6 +22,13 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.48 — 2026-08-12
+**Connector: watchdog-reboot attribution.** collect.sh reports
+`net_reboot_last` (the newest stamp in checkInternet.sh's `.net_reboot_log`),
+so the server can attribute an 0x0b reboot recovery to the connectivity
+watchdog (failed network pings) rather than a manual reboot — shown on the
+dashboard's availability outage tooltips.
+
 ### deploy.sh: never install to /root — 2026-08-11
 (No SOFTWARE_VERSION bump: deploy-script-only change, fetched fresh each run.)
 Nightly auto-update runs (root cron, no SUDO_USER) resolved TARGET_HOME to

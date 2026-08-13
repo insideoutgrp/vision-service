@@ -19,6 +19,9 @@ ip_addr=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="
 cd "$VISION_HOME" 2>/dev/null || { echo "vision_service=missing"; exit 0; }
 
 echo "sw_version=$(grep -m1 "SOFTWARE_VERSION=" utilities.sh 2>/dev/null | cut -d\' -f2)"
+# Last connectivity-watchdog reboot (checkInternet.sh stamps one line per
+# reboot, UTC) — lets the server attribute 0x0b boots to failed network pings.
+[ -f .net_reboot_log ] && echo "net_reboot_last=$(tail -1 .net_reboot_log)"
 # Identify the active schedule by content hash — the server maps hash -> catalogue name.
 [ -f schedule.wpi ] && echo "schedule_md5=$(md5sum schedule.wpi | cut -d' ' -f1)"
 # Latest camera settings snapshot (written daily by camera.sh logsettings).
