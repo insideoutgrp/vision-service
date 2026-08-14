@@ -22,6 +22,14 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.49 — 2026-08-14
+**Retire legacy pi-user cron jobs (RemoteIoT era).** deploy.sh now removes
+`check3g.sh` (network-loss rebooter with no loop protection — fought the
+current watchdog and caused unattributed 0x0b reboots) and the legacy
+`synctime.sh` entry from the pi crontab. Everything else there is kept,
+including the @reboot GPIO setup that wires the camera shutter trigger.
+Version bumped so the cleanup rides the nightly auto-update fleet-wide.
+
 ### v5.48 — 2026-08-12
 **Connector: watchdog-reboot attribution.** collect.sh reports
 `net_reboot_last` (the newest stamp in checkInternet.sh's `.net_reboot_log`),

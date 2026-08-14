@@ -263,6 +263,20 @@ if [ -n "$WITTYPI_DIR" ]; then
   echo '  Cron set: time sync every 15 min; internet check at :07/:22/:37/:52;'
   echo '            daily camera settings snapshot (attempts at :05/:20/:35/:50);'
   echo '            daily auto-update check (attempts at :12/:27/:42/:57).'
+
+  # Retire legacy PI-USER cron jobs from the RemoteIoT era:
+  # - check3g.sh: rebooted the Pi on network loss with NO loop protection,
+  #   fighting the current watchdog (source of unattributed 0x0b reboots)
+  # - synctime.sh: legacy time sync pointing at the removed ~/wittypi tree
+  # Everything else in pi's crontab is kept - notably the @reboot GPIO setup
+  # line that wires the camera shutter trigger for the live capture path.
+  PI_CRON=$(crontab -l -u pi 2>/dev/null || true)
+  if echo "$PI_CRON" | grep -qiE 'check3g\.sh|synctime\.sh'; then
+    LEGACY_N=$(echo "$PI_CRON" | grep -ciE 'check3g\.sh|synctime\.sh')
+    echo "$PI_CRON" | grep -viE 'check3g\.sh|synctime\.sh' | crontab -u pi - || true
+    echo "  Removed $LEGACY_N legacy pi-user cron job(s) (check3g/synctime - superseded"
+    echo "  by the root-cron watchdog and time sync; @reboot GPIO setup kept)."
+  fi
   echo ''
 
   # v5.44: heal the connector service pre-version-gate. If this device is
