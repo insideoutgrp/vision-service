@@ -11,6 +11,25 @@ echo "disk_free_mb=$(df -m / | awk 'NR==2{print $4}')"
 echo "kernel=$(uname -r)"
 echo "pi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)"
 echo "os_release=$(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
+# Test-bench detection: if the office SSID is visible on a wifi scan the
+# unit is physically at the office. Scan only (never connects); needs
+# passwordless sudo (fleet default) — silently absent otherwise, and the
+# server treats missing data as "not bench".
+if command -v iw >/dev/null 2>&1; then
+  scan_out=$(sudo -n iw dev wlan0 scan 2>/dev/null)
+  if [ -z "$scan_out" ]; then
+    sudo -n ip link set wlan0 up 2>/dev/null && sleep 1
+    scan_out=$(sudo -n iw dev wlan0 scan 2>/dev/null)
+  fi
+  if [ -n "$scan_out" ]; then
+    if echo "$scan_out" | grep -q 'SSID: InsideOut'; then
+      echo "office_ssid_visible=1"
+    else
+      echo "office_ssid_visible=0"
+    fi
+  fi
+fi
+
 # Primary internal IP — the server maps subnet -> router type (site network).
 ip_addr=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="src"){print $(i+1); exit}}')
 [ -z "$ip_addr" ] && ip_addr=$(hostname -I 2>/dev/null | awk '{print $1}')

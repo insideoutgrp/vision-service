@@ -22,6 +22,13 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.50 — 2026-08-14
+**Connector: test-bench detection.** collect.sh scans for the office wifi
+SSID (InsideOut) each cycle — visibility means the unit is physically at
+the office, so the dashboard can itemise bench units separately from field
+deployments. Scan only, never connects; needs the fleet-default passwordless
+sudo (silently absent otherwise → treated as field).
+
 ### v5.49 — 2026-08-14
 **Retire legacy pi-user cron jobs (RemoteIoT era).** deploy.sh now removes
 `check3g.sh` (network-loss rebooter with no loop protection — fought the
