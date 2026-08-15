@@ -11,14 +11,25 @@ echo "disk_free_mb=$(df -m / | awk 'NR==2{print $4}')"
 echo "kernel=$(uname -r)"
 echo "pi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)"
 echo "os_release=$(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
-# Test-bench detection: if the office SSID is visible on a wifi scan the
-# unit is physically at the office. Scan only (never connects); needs
-# passwordless sudo (fleet default) — silently absent otherwise, and the
-# server treats missing data as "not bench".
-if command -v iw >/dev/null 2>&1; then
-  # v5.51: unblock/raise the radio first (old fleet builds soft-block wifi),
-  # capture stderr, and report scan FAILURES instead of staying silent —
-  # a device that can't scan should say so, not just never flag.
+# Test-bench detection + field power savings (v5.52).
+# Bench (office SSID visible): HDMI/wifi/bluetooth ON for troubleshooting,
+# scan every cycle so leaving the office is noticed quickly.
+# Field: HDMI + wifi + bluetooth OFF (~50-80 mA); wifi wakes once a day
+# just long enough to scan, then blocks again. Profiles are idempotent and
+# re-applied every cycle, so a reboot self-heals within 5 minutes.
+BENCH_STATE="$VISION_HOME/.bench_state"       # bench|field (last good scan)
+BENCH_STAMP="$VISION_HOME/.bench_scan_date"   # daily stamp for field scans
+bench_state=$(cat "$BENCH_STATE" 2>/dev/null)
+scan_today=$(date -u +%Y-%m-%d)
+
+do_scan=0
+if [ "$bench_state" != "field" ]; then
+  do_scan=1   # bench or unknown: scan every cycle
+elif [ "$(cat "$BENCH_STAMP" 2>/dev/null)" != "$scan_today" ]; then
+  do_scan=1   # field: once per day
+fi
+
+if [ "$do_scan" = "1" ] && command -v iw >/dev/null 2>&1; then
   sudo -n rfkill unblock wifi 2>/dev/null
   sudo -n ip link set wlan0 up 2>/dev/null
   scan_out=$(sudo -n iw dev wlan0 scan 2>&1)
@@ -27,16 +38,35 @@ if command -v iw >/dev/null 2>&1; then
     scan_out=$(sudo -n iw dev wlan0 scan 2>&1)
   fi
   if echo "$scan_out" | grep -q 'SSID:'; then
+    echo "$scan_today" > "$BENCH_STAMP"
     if echo "$scan_out" | grep -q 'SSID: InsideOut'; then
       echo "office_ssid_visible=1"
+      echo bench > "$BENCH_STATE"
     else
       echo "office_ssid_visible=0"
+      echo field > "$BENCH_STATE"
     fi
   else
+    # can't scan: report it and leave the radio alone (never block wifi on
+    # a device whose scan is broken — it could never detect the bench again)
     echo "office_scan_error=$(echo "$scan_out" | head -1 | tr -d "\"'" | cut -c1-60)"
   fi
-else
+elif ! command -v iw >/dev/null 2>&1; then
   echo "office_scan_error=iw_not_installed"
+fi
+
+# apply the power profile for the (possibly just-updated) state
+bench_state=$(cat "$BENCH_STATE" 2>/dev/null)
+if [ "$bench_state" = "field" ]; then
+  sudo -n vcgencmd display_power 0 >/dev/null 2>&1 || sudo -n tvservice -o >/dev/null 2>&1
+  sudo -n rfkill block wifi 2>/dev/null
+  sudo -n rfkill block bluetooth 2>/dev/null
+  echo "powersave=1"
+elif [ "$bench_state" = "bench" ]; then
+  sudo -n vcgencmd display_power 1 >/dev/null 2>&1 || sudo -n tvservice -p >/dev/null 2>&1
+  sudo -n rfkill unblock wifi 2>/dev/null
+  sudo -n rfkill unblock bluetooth 2>/dev/null
+  echo "powersave=0"
 fi
 
 # Primary internal IP — the server maps subnet -> router type (site network).

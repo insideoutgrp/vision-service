@@ -22,6 +22,15 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.52 — 2026-08-14
+**Field power savings, bench-aware.** Devices classified as field (office
+SSID not visible) turn off HDMI, wifi and bluetooth (~50-80 mA), with wifi
+waking once a day just long enough to re-scan for the bench before blocking
+again. Bench devices keep everything on for troubleshooting and scan every
+cycle, so arriving at/leaving the office flips the profile automatically.
+Profiles re-apply each 5-min cycle (reboot self-heals); a device whose scan
+errors never blocks its own wifi. Telemetry gains `powersave=0/1`.
+
 ### v5.51 — 2026-08-14
 **Bench scan hardening + diagnostics.** rfkill-unblock and raise wlan0
 before scanning (old fleet builds soft-block wifi), retry once after a
