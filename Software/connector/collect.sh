@@ -16,18 +16,27 @@ echo "os_release=$(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
 # passwordless sudo (fleet default) — silently absent otherwise, and the
 # server treats missing data as "not bench".
 if command -v iw >/dev/null 2>&1; then
-  scan_out=$(sudo -n iw dev wlan0 scan 2>/dev/null)
-  if [ -z "$scan_out" ]; then
-    sudo -n ip link set wlan0 up 2>/dev/null && sleep 1
-    scan_out=$(sudo -n iw dev wlan0 scan 2>/dev/null)
+  # v5.51: unblock/raise the radio first (old fleet builds soft-block wifi),
+  # capture stderr, and report scan FAILURES instead of staying silent —
+  # a device that can't scan should say so, not just never flag.
+  sudo -n rfkill unblock wifi 2>/dev/null
+  sudo -n ip link set wlan0 up 2>/dev/null
+  scan_out=$(sudo -n iw dev wlan0 scan 2>&1)
+  if ! echo "$scan_out" | grep -q 'SSID:'; then
+    sleep 2   # scans transiently fail while the radio settles / iface busy
+    scan_out=$(sudo -n iw dev wlan0 scan 2>&1)
   fi
-  if [ -n "$scan_out" ]; then
+  if echo "$scan_out" | grep -q 'SSID:'; then
     if echo "$scan_out" | grep -q 'SSID: InsideOut'; then
       echo "office_ssid_visible=1"
     else
       echo "office_ssid_visible=0"
     fi
+  else
+    echo "office_scan_error=$(echo "$scan_out" | head -1 | tr -d "\"'" | cut -c1-60)"
   fi
+else
+  echo "office_scan_error=iw_not_installed"
 fi
 
 # Primary internal IP — the server maps subnet -> router type (site network).

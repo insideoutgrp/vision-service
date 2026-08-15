@@ -22,6 +22,13 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.51 — 2026-08-14
+**Bench scan hardening + diagnostics.** rfkill-unblock and raise wlan0
+before scanning (old fleet builds soft-block wifi), retry once after a
+settle delay, and report `office_scan_error` (first error line, or
+iw_not_installed) when a scan cannot run — a device that can't scan now
+says so instead of silently never flagging (found on Lobster Roll).
+
 ### v5.50 — 2026-08-14
 **Connector: test-bench detection.** collect.sh scans for the office wifi
 SSID (InsideOut) each cycle — visibility means the unit is physically at
