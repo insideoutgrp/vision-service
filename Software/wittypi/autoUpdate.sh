@@ -34,6 +34,10 @@ REPO_RAW='https://raw.githubusercontent.com/insideoutgrp/vision-service/main'
 
 STAMP="$cur_dir/.autoupdate_date"
 CONF="$cur_dir/autoUpdate.conf"
+# One-shot dashboard approval (written by the connector). Without it a newer
+# published version is logged but NOT applied - fleet-wide silent updates
+# are opt-in per device from v5.53. `force` keeps working regardless.
+APPROVAL="$cur_dir/.update_approved"
 
 if [ "$(id -u)" != 0 ]; then
   echo 'autoUpdate.sh must run as root (deploy needs it).'
@@ -60,7 +64,11 @@ fi
 
 if [ "$1" != "force" ]; then
   today=$(TZ=$LOCAL_TZ date +%Y-%m-%d)
-  [ "$(cat "$STAMP" 2>/dev/null)" = "$today" ] && exit 0
+  # approval bypasses the daily stamp so an approved update applies at the
+  # next cron tick, not tomorrow
+  if [ ! -f "$APPROVAL" ]; then
+    [ "$(cat "$STAMP" 2>/dev/null)" = "$today" ] && exit 0
+  fi
   # stay out of the boot window (daemon startup, schedule engine, deploys
   # triggered at boot would fight the daemon over the I2C registers)
   up=$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 999)
@@ -85,6 +93,10 @@ if [ "$remote" = "$SOFTWARE_VERSION" ]; then
   exit 0
 fi
 
+if [ "$1" != "force" ] && [ ! -f "$APPROVAL" ]; then
+  log "AutoUpdate: v$remote published (installed v$SOFTWARE_VERSION) - holding until approved from the dashboard."
+  exit 0
+fi
 log "AutoUpdate: published version v$remote differs from installed v$SOFTWARE_VERSION - deploying."
 tmp=$(mktemp)
 if ! curl -sSL --max-time 120 "$REPO_RAW/Software/deploy.sh" -o "$tmp" \

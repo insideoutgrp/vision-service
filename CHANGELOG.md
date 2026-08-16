@@ -22,6 +22,16 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.53 — 2026-08-14
+**Opt-in updates (connector 2.3).** Fleet-wide silent auto-updates retired:
+autoUpdate now HOLDS a newer published version ("waiting for approval")
+unless the device's one-shot approval is set from the dashboard. The
+connector relays the approval as `.update_approved`; approved devices
+update at the next cron tick (≤15 min) instead of waiting for the daily
+stamp; the server clears the approval automatically once the new version
+reports. `autoUpdate.sh force` on the box keeps working regardless.
+NOTE: this release itself is the last to roll out unconditionally.
+
 ### v5.52 — 2026-08-14
 **Field power savings, bench-aware.** Devices classified as field (office
 SSID not visible) turn off HDMI, wifi and bluetooth (~50-80 mA), with wifi

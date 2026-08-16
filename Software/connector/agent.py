@@ -24,7 +24,7 @@ import yaml
 
 log = logging.getLogger("connector")
 
-AGENT_VERSION = "2.2"  # connector era: updates ride vision-service autoUpdate
+AGENT_VERSION = "2.3"  # connector era: updates ride vision-service autoUpdate
 SPEEDTEST_KB = 128     # ~4 MB/month/device at one test per day — SIMs pay per MB
 HERE = Path(__file__).resolve().parent
 LOG_FILES = {"wittyPi.log", "schedule.log", "cameraSettings.log"}  # tail allowlist
@@ -178,10 +178,22 @@ class Agent:
         try:
             r = self.session.get(f"{self.server}/v1/commands", timeout=30)
             r.raise_for_status()
-            commands = r.json()["commands"]
+            data = r.json()
+            commands = data["commands"]
         except Exception as e:
             log.warning("command fetch failed: %s", e)
             return
+        # Relay the dashboard's one-shot update approval to autoUpdate.sh via
+        # a marker file. Server-authoritative: created when approved, removed
+        # when not (the server clears the flag once the new version reports).
+        marker = self.vision_home / ".update_approved"
+        try:
+            if data.get("update_approved"):
+                marker.touch()
+            else:
+                marker.unlink(missing_ok=True)
+        except OSError as e:
+            log.warning("update-approval marker: %s", e)
         for cmd in commands:
             log.info("command %s: %s %s", cmd["id"], cmd["type"], cmd.get("payload"))
             try:
