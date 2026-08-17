@@ -22,6 +22,16 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v4.53 — 2026-08-17 (legacy line, Witty-Pi-4 `main`)
+**IOVision Phase A: fleet management for legacy-firmware devices.** The
+connector, camera.sh and autoUpdate.sh are ported from this (v5) line into
+the firmware-agnostic v4 branch, installing under `/home/pi/wittypi`
+(`vision_home` points there; identical layout shape). Self-updates use the
+API's `/v1/sw/legacy/*` mirror channel. Dashboard schedule CONTROL is
+blocked server-side for 4.x devices (schedule telemetry stays read-only);
+camera control is fully live. deploy.sh gains the never-/root guard and
+validated mirror-first tarball fetch.
+
 ### v5.57 — 2026-08-17
 **Software distribution via API mirror.** The whole bench fleet NATs behind
 one office IP, and 18 devices probing raw.githubusercontent.com every 15 min
