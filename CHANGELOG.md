@@ -22,6 +22,16 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.59 / v4.55 — 2026-08-17
+**Connector 2.4: relay fallback ingress.** When the primary API is
+unreachable at the connection level, telemetry/commands/schedule fetches
+retry once via the dashboard's relay (`/relay/v1/*` on Netlify — a
+different network path into the droplet). Built during the Tele2<->DO
+LINX peering outages that blacked the fleet out twice on 2026-08-17;
+with 2.4 a repeat costs one cycle, not hours. Speedtest stays
+primary-only (it measures the direct path). `fallback_url` overridable
+in /etc/iovision/config.yaml.
+
 ### v5.58 / v4.54 — 2026-08-17
 **Connector: feed id from `Fid:` status lines + publish state.** `cap_feed`
 is now taken from tssvc's periodic status line ("Offline, Feed unchanged,

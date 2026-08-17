@@ -24,7 +24,13 @@ import yaml
 
 log = logging.getLogger("connector")
 
-AGENT_VERSION = "2.3"  # connector era: updates ride vision-service autoUpdate
+AGENT_VERSION = "2.4"  # connector era: updates ride vision-service autoUpdate
+# Fallback ingress: the dashboard host relays /v1/* to the API over a
+# different network path. Used only when the primary API is unreachable
+# at the connection level — survives a broken carrier<->DO route (the
+# 2026-08-17 Tele2/LINX peering outage blacked the fleet out for ~105
+# min while this path stayed up). Overridable via config fallback_url.
+FALLBACK_URL = "https://statics-dashboard.netlify.app/relay"
 SPEEDTEST_KB = 128     # ~4 MB/month/device at one test per day — SIMs pay per MB
 HERE = Path(__file__).resolve().parent
 LOG_FILES = {"wittyPi.log", "schedule.log", "cameraSettings.log"}  # tail allowlist
@@ -42,10 +48,24 @@ class Agent:
         self.data_dir = Path(local.get("data_dir", "/var/lib/iovision"))
         self.spool = self.data_dir / "spool"
         self.spool.mkdir(parents=True, exist_ok=True)
+        self.fallback = str(local.get("fallback_url", FALLBACK_URL)).rstrip("/")
         self.session = requests.Session()
         self.session.headers.update(
             {"X-Device-Id": self.device_id, "Authorization": f"Bearer {local['token']}"}
         )
+
+    def request(self, method: str, path: str, **kw) -> requests.Response:
+        """Primary API first; on a CONNECTION-level failure retry once via the
+        relay. HTTP error statuses are returned as-is (the origin answered —
+        the path works, the request is the problem)."""
+        try:
+            return self.session.request(method, f"{self.server}{path}", **kw)
+        except requests.exceptions.RequestException as e:
+            if not self.fallback:
+                raise
+            log.warning("primary API unreachable (%s) — retrying via relay",
+                        e.__class__.__name__)
+            return self.session.request(method, f"{self.fallback}{path}", **kw)
 
     # ---------------------------------------------------------- telemetry
 
@@ -129,9 +149,9 @@ class Agent:
         payload = json.dumps({"reports": reports})
         t0 = time.monotonic()
         try:
-            r = self.session.post(f"{self.server}/v1/telemetry", data=payload,
-                                  headers={"Content-Type": "application/json"},
-                                  timeout=30)
+            r = self.request("POST", "/v1/telemetry", data=payload,
+                             headers={"Content-Type": "application/json"},
+                             timeout=30)
             r.raise_for_status()
         except Exception as e:
             log.warning("telemetry send failed (%d spooled): %s", len(files), e)
@@ -176,7 +196,7 @@ class Agent:
 
     def run_commands(self) -> None:
         try:
-            r = self.session.get(f"{self.server}/v1/commands", timeout=30)
+            r = self.request("GET", "/v1/commands", timeout=30)
             r.raise_for_status()
             data = r.json()
             commands = data["commands"]
@@ -202,8 +222,8 @@ class Agent:
             except Exception as e:
                 result, status = {"error": str(e)[:500]}, "failed"
             try:
-                self.session.post(f"{self.server}/v1/commands/{cmd['id']}/result",
-                                  json={"status": status, "result": result}, timeout=30)
+                self.request("POST", f"/v1/commands/{cmd['id']}/result",
+                             json={"status": status, "result": result}, timeout=30)
             except Exception as e:
                 log.warning("result post failed for %s: %s", cmd["id"], e)
         if getattr(self, "_restart_pending", False):
@@ -224,7 +244,7 @@ class Agent:
             return {"pong": True}
         if ctype == "set_schedule":
             name = Path(p["name"]).name  # no traversal
-            r = self.session.get(f"{self.server}/v1/schedules/{name}", timeout=30)
+            r = self.request("GET", f"/v1/schedules/{name}", timeout=30)
             r.raise_for_status()
             tmp = home / "schedule.wpi.new"
             tmp.write_text(r.text)
