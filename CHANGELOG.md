@@ -22,6 +22,13 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.54 — 2026-08-17
+**Connector: data-usage counters.** collect.sh reports the kernel interface
+byte counters (eth0+wlan0 rx/tx, all traffic including Teleport uploads).
+The server derives per-day usage and flags devices over the configurable
+MB/day budget. First release under opt-in updates: bench devices take it
+automatically; field devices need the dashboard approval tick.
+
 ### v5.53 — 2026-08-14
 **Opt-in updates (connector 2.3).** Fleet-wide silent auto-updates retired:
 autoUpdate now HOLDS a newer published version ("waiting for approval")

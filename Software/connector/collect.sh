@@ -11,6 +11,17 @@ echo "disk_free_mb=$(df -m / | awk 'NR==2{print $4}')"
 echo "kernel=$(uname -r)"
 echo "pi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)"
 echo "os_release=$(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
+# Data usage: kernel interface counters (bytes since boot, all traffic —
+# including Teleport uploads, which dominate). The server diffs consecutive
+# readings into per-day usage and flags budget overruns.
+net_rx=0; net_tx=0
+for ifc in eth0 wlan0; do
+  r=$(cat /sys/class/net/$ifc/statistics/rx_bytes 2>/dev/null) && net_rx=$((net_rx + r))
+  t=$(cat /sys/class/net/$ifc/statistics/tx_bytes 2>/dev/null) && net_tx=$((net_tx + t))
+done
+echo "net_rx_bytes=$net_rx"
+echo "net_tx_bytes=$net_tx"
+
 # Test-bench detection + field power savings (v5.52).
 # Bench (office SSID visible): HDMI/wifi/bluetooth ON for troubleshooting,
 # scan every cycle so leaving the office is noticed quickly.
