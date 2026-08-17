@@ -22,6 +22,17 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.58 / v4.54 — 2026-08-17
+**Connector: feed id from `Fid:` status lines + publish state.** `cap_feed`
+is now taken from tssvc's periodic status line ("Offline, Feed unchanged,
+…, Fid: feXXXXXXXXXX, Ch: default") — the station's actual configured feed —
+with the old any-token grep kept as fallback. New `cap_feed_state` reports
+the leading state word: re-staged bench units still configured with their
+old SITE feed report "Offline", and the dashboard now hides that feed's
+live image instead of showing another camera's pictures as this device's
+(found on the 2026-08-17 re-staged batch: Pitta et al showed Gartree
+Cabins/Vulcan/Saltley site frames).
+
 ### v4.53 — 2026-08-17 (legacy line, Witty-Pi-4 `main`)
 **IOVision Phase A: fleet management for legacy-firmware devices.** The
 connector, camera.sh and autoUpdate.sh are ported from this (v5) line into

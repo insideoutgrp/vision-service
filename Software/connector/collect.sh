@@ -141,13 +141,28 @@ if [ "$(systemctl show tssvc -p LoadState --value 2>/dev/null)" = "loaded" ]; th
     method=$(echo "$jlog" | grep -F 'captureMethod:' | tail -1 |
              sed 's/.*captureMethod: *//' | cut -c1-40)
     [ -n "$method" ] && echo "cap_method=$method"
-    # Teleport feed id (e.g. feq3stropy57) — appears in the journal near
-    # startup, so scan the whole current boot, and cache it in case the
-    # journal rotates it away on long-uptime devices. The dashboard uses it
-    # to show the latest captured image (frame-get, key held server-side).
+    # Teleport feed id + publish state. tssvc logs periodic status lines:
+    #   "<ts> Offline, Feed unchanged, State: ..., Fid: fejy6df8thki, Ch: default"
+    # Fid: is THIS station's configured feed; the leading word is whether
+    # it is actually publishing to it. Both matter: a re-staged bench unit
+    # still configured with its old site feed reports "Offline" — the
+    # dashboard must not show that site's live image as this device's
+    # (found on the 2026-08-17 re-staged batch). Cache survives journal
+    # rotation on long uptimes.
     FEED_CACHE="$VISION_HOME/.teleport_feed"
-    feed=$($JCTL -u tssvc -b -o cat --no-pager 2>/dev/null |
-           grep -oE '\bfe[a-z0-9]{10}\b' | tail -1)
+    fid_line=$($JCTL -u tssvc -b -o cat --no-pager 2>/dev/null |
+               grep -E 'Fid: fe[a-z0-9]{10}' | tail -1)
+    feed=$(echo "$fid_line" | grep -oE 'Fid: fe[a-z0-9]{10}' | cut -d' ' -f2)
+    if [ -n "$fid_line" ]; then
+      state=$(echo "$fid_line" | sed -n 's|^[0-9/]* [0-9:]* \([A-Za-z]*\),.*|\1|p')
+      [ -n "$state" ] && echo "cap_feed_state=$state"
+    fi
+    if [ -z "$feed" ]; then
+      # fallback: any feed-shaped token in the boot journal (pre-status-line
+      # tssvc builds), else the cached value
+      feed=$($JCTL -u tssvc -b -o cat --no-pager 2>/dev/null |
+             grep -oE '\bfe[a-z0-9]{10}\b' | tail -1)
+    fi
     if [ -n "$feed" ]; then
       echo "$feed" > "$FEED_CACHE" 2>/dev/null
     else
