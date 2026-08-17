@@ -22,6 +22,16 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.60 / v4.56 — 2026-08-17
+**Connector: OS-update backlog tracking.** Weekly `apt-get update`
+(backgrounded; the package-list refresh is the only data cost on metered
+SIMs) plus a daily local count of upgradable packages, reported as
+`apt_updates`. The server warns at 20+ pending so maintenance can be
+planned before the backlog grows. Server-side in the same release: the
+long-uptime warning now applies to EVERY device at 48h continuous uptime
+(previously 72h for solar/battery groups and 14 days otherwise) — all
+devices should power-cycle on their Witty Pi schedule.
+
 ### v5.59 / v4.55 — 2026-08-17
 **Connector 2.4: relay fallback ingress.** When the primary API is
 unreachable at the connection level, telemetry/commands/schedule fetches

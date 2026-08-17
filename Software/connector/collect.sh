@@ -22,6 +22,25 @@ done
 echo "net_rx_bytes=$net_rx"
 echo "net_tx_bytes=$net_tx"
 
+# OS updates pending (v5.60). Weekly `apt-get update` (backgrounded — the
+# package-list refresh costs data on metered SIMs, once a week is the
+# agreed budget), then a daily local count of upgradable packages. The
+# server warns when the backlog builds up.
+APT_STAMP="${VISION_HOME}/.apt_update_week"
+APT_COUNT_FILE="${VISION_HOME}/.apt_updates"
+APT_COUNT_DAY="${VISION_HOME}/.apt_count_date"
+week=$(date -u +%G-%V)
+if [ "$(cat "$APT_STAMP" 2>/dev/null)" != "$week" ]; then
+  echo "$week" > "$APT_STAMP" 2>/dev/null
+  nohup sudo -n apt-get update -qq >/dev/null 2>&1 &
+fi
+today_utc=$(date -u +%F)
+if [ "$(cat "$APT_COUNT_DAY" 2>/dev/null)" != "$today_utc" ]; then
+  n=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ') \
+    && { echo "$n" > "$APT_COUNT_FILE" 2>/dev/null; echo "$today_utc" > "$APT_COUNT_DAY" 2>/dev/null; }
+fi
+[ -f "$APT_COUNT_FILE" ] && echo "apt_updates=$(cat "$APT_COUNT_FILE")"
+
 # Test-bench detection + field power savings (v5.52).
 # Bench (office SSID visible): HDMI/wifi/bluetooth ON for troubleshooting,
 # scan every cycle so leaving the office is noticed quickly.
