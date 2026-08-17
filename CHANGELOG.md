@@ -22,6 +22,20 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.55 — 2026-08-17
+**Connector: Teleport capture pipeline status.** collect.sh parses the tssvc
+journal (`journalctl -u tssvc`, short-unix format) for the latest frame
+events: "Next frm" → `cap_due_at`/`cap_interval_s`, "Got frm" →
+`cap_last_at`/`cap_size_kb`/`cap_shoot_ms`, "Up frm" →
+`cap_up_at`/`cap_up_ms`, plus `cap_svc` (systemd state) and `cap_method`
+(learned captureMethod). Timestamps are epoch seconds UTC; Go durations
+("10m0s", "4.106s", "982ms") are parsed to ms. Read-only; skipped where the
+tssvc unit isn't installed; falls back to `sudo -n journalctl` if the pi
+user can't read the journal (`cap_log_error=journal_unreadable` if neither
+works). Server derives capture faults (service down / frame due but never
+captured / uploads stuck); dashboard shows last capture, last upload and
+next-due on the device card and page.
+
 ### v5.54 — 2026-08-17
 **Connector: data-usage counters.** collect.sh reports the kernel interface
 byte counters (eth0+wlan0 rx/tx, all traffic including Teleport uploads).

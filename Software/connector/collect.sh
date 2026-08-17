@@ -85,6 +85,61 @@ ip_addr=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="
 [ -z "$ip_addr" ] && ip_addr=$(hostname -I 2>/dev/null | awk '{print $1}')
 [ -n "$ip_addr" ] && echo "internal_ip=$ip_addr"
 
+# Teleport capture health (v5.55). The tssvc journal narrates the frame
+# pipeline: "Next frm" (frame due + interval), "Got frm" (captured, size +
+# shoot time), "Up frm" (uploaded). Parse the latest of each so the dashboard
+# can show capture status and flag missed frames. Read-only; skipped where
+# tssvc isn't installed. Timestamps are epoch seconds UTC.
+godur_ms() {  # Go duration ("10m0s", "4.106s", "982ms", "1h2m3s") -> ms
+  local d="$1" ms=0
+  [[ $d =~ ([0-9]+)h ]] && ms=$((ms + BASH_REMATCH[1] * 3600000))
+  [[ $d =~ ([0-9]+)m([0-9]|$) ]] && ms=$((ms + BASH_REMATCH[1] * 60000))
+  if [[ $d =~ ([0-9]+(\.[0-9]+)?)ms ]]; then
+    ms=$((ms + $(awk -v n="${BASH_REMATCH[1]}" 'BEGIN{printf "%d", n}')))
+  elif [[ $d =~ ([0-9]+(\.[0-9]+)?)s ]]; then
+    ms=$((ms + $(awk -v n="${BASH_REMATCH[1]}" 'BEGIN{printf "%d", n*1000}')))
+  fi
+  echo "$ms"
+}
+if [ "$(systemctl show tssvc -p LoadState --value 2>/dev/null)" = "loaded" ]; then
+  echo "cap_svc=$(systemctl is-active tssvc 2>/dev/null)"
+  # short-unix prefixes each line with epoch seconds — no timezone games.
+  jlog=$(journalctl -u tssvc -n 400 -o short-unix --no-pager 2>/dev/null)
+  [ -z "$jlog" ] && jlog=$(sudo -n journalctl -u tssvc -n 400 -o short-unix --no-pager 2>/dev/null)
+  if [ -z "$jlog" ]; then
+    echo "cap_log_error=journal_unreadable"
+  else
+    next_line=$(echo "$jlog" | grep -F 'Next frm,' | tail -1)
+    if [ -n "$next_line" ]; then
+      ts=$(echo "$next_line" | sed -n 's/.*TS: \([^,]*\).*/\1/p')
+      due=$(date -u -d "$ts" +%s 2>/dev/null) && echo "cap_due_at=$due"
+      ci=$(echo "$next_line" | sed -n 's/.*CI: \([^,]*\).*/\1/p')
+      [ -n "$ci" ] && echo "cap_interval_s=$(( $(godur_ms "$ci") / 1000 ))"
+    fi
+    got_line=$(echo "$jlog" | grep -F 'Got frm,' | tail -1)
+    if [ -n "$got_line" ]; then
+      ts=$(echo "$got_line" | sed -n 's/.*TS: \([^,]*\).*/\1/p')
+      got=$(date -u -d "$ts" +%s 2>/dev/null) && echo "cap_last_at=$got"
+      size=$(echo "$got_line" | sed -n 's/.*S: \([^,]*\).*/\1/p')
+      kb=$(echo "$size" | awk '{v=$0+0; if (index($0,"GiB")) v*=1048576;
+        else if (index($0,"MiB")) v*=1024; else if (index($0,"KiB")) v+=0;
+        else v/=1024; printf "%d", v}')
+      [ -n "$size" ] && echo "cap_size_kb=$kb"
+      fst=$(echo "$got_line" | sed -n 's/.*FST: \([^,]*\).*/\1/p')
+      [ -n "$fst" ] && echo "cap_shoot_ms=$(godur_ms "$fst")"
+    fi
+    up_line=$(echo "$jlog" | grep -F 'Up frm,' | tail -1)
+    if [ -n "$up_line" ]; then
+      echo "cap_up_at=$(echo "$up_line" | awk '{printf "%d", $1}')"
+      fut=$(echo "$up_line" | sed -n 's/.*FUT: \([^,]*\).*/\1/p')
+      [ -n "$fut" ] && echo "cap_up_ms=$(godur_ms "$fut")"
+    fi
+    method=$(echo "$jlog" | grep -F 'captureMethod:' | tail -1 |
+             sed 's/.*captureMethod: *//' | cut -c1-40)
+    [ -n "$method" ] && echo "cap_method=$method"
+  fi
+fi
+
 cd "$VISION_HOME" 2>/dev/null || { echo "vision_service=missing"; exit 0; }
 
 echo "sw_version=$(grep -m1 "SOFTWARE_VERSION=" utilities.sh 2>/dev/null | cut -d\' -f2)"
