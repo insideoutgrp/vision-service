@@ -31,6 +31,12 @@ TIME_UNKNOWN=0
 
 # must match where this repository is hosted; deploy.sh pins the same branch
 REPO_RAW='https://raw.githubusercontent.com/insideoutgrp/vision-service/main'
+# API-side cached mirror of the same payloads (v5.57). Preferred: a whole
+# bench fleet probing GitHub from one NAT IP got that IP 429-banned; the
+# mirror makes GitHub see one droplet fetch per 5 min regardless of fleet
+# size. GitHub direct remains the fallback so a droplet outage never
+# strands a device.
+API_SW='https://api.insideoutgroup.co.uk/v1/sw'
 
 STAMP="$cur_dir/.autoupdate_date"
 CONF="$cur_dir/autoUpdate.conf"
@@ -77,11 +83,16 @@ else
   today=$(TZ=$LOCAL_TZ date +%Y-%m-%d)
 fi
 
-# cheap remote version probe before any heavy download
-remote=$(curl -s --max-time 25 "$REPO_RAW/Software/wittypi/utilities.sh" \
-         | grep "SOFTWARE_VERSION=" | head -1 | grep -o "'[^']*'" | tr -d "'")
+# cheap remote version probe before any heavy download — mirror first
+# (strict format check: an error page must never look like a version)
+remote=$(curl -s --max-time 25 "$API_SW/version" \
+         | grep -oE '^[0-9]+\.[0-9]+$' | head -1)
 if [ -z "$remote" ]; then
-  # offline or GitHub unreachable - no stamp, retry on the next cron tick
+  remote=$(curl -s --max-time 25 "$REPO_RAW/Software/wittypi/utilities.sh" \
+           | grep "SOFTWARE_VERSION=" | head -1 | grep -o "'[^']*'" | tr -d "'")
+fi
+if [ -z "$remote" ]; then
+  # offline or both sources unreachable - no stamp, retry on the next cron tick
   exit 0
 fi
 
@@ -99,10 +110,15 @@ if [ "$1" != "force" ] && [ ! -f "$APPROVAL" ]; then
 fi
 log "AutoUpdate: published version v$remote differs from installed v$SOFTWARE_VERSION - deploying."
 tmp=$(mktemp)
-if ! curl -sSL --max-time 120 "$REPO_RAW/Software/deploy.sh" -o "$tmp" \
-   || ! bash -n "$tmp" 2>/dev/null; then
+fetched=""
+for src in "$API_SW/deploy.sh" "$REPO_RAW/Software/deploy.sh"; do
+  if curl -sSL --max-time 120 "$src" -o "$tmp" && bash -n "$tmp" 2>/dev/null; then
+    fetched=1; break
+  fi
+done
+if [ -z "$fetched" ]; then
   rm -f "$tmp"
-  log 'AutoUpdate: WARN - could not fetch a valid deploy.sh; will retry tomorrow.'
+  log 'AutoUpdate: WARN - could not fetch a valid deploy.sh from mirror or GitHub; will retry tomorrow.'
   exit 1
 fi
 rc=0

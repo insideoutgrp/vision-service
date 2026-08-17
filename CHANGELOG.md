@@ -22,6 +22,17 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.57 — 2026-08-17
+**Software distribution via API mirror.** The whole bench fleet NATs behind
+one office IP, and 18 devices probing raw.githubusercontent.com every 15 min
+(plus release-day tarball pulls) got that IP 429-banned by GitHub — found
+when an enrolment piped GitHub's rate-limit page into bash. autoUpdate.sh
+and deploy.sh now fetch the version probe, deploy.sh and the repo tarball
+from `https://api.insideoutgroup.co.uk/v1/sw/*` (droplet-cached, 5-min TTL,
+serves stale if GitHub is down) with GitHub direct as fallback. All fetches
+are validated before use (version format, `#!` + `bash -n`, gzip magic) so
+an error page can never again execute or half-install.
+
 ### v5.56 — 2026-08-17
 **Connector: Teleport feed id.** collect.sh also reports `cap_feed` — the
 feed id (e.g. `feq3stropy57`) grepped from the current boot's tssvc journal

@@ -125,10 +125,17 @@ if [ "$VISION_HOME" != "/root/vision-service" ] && [ -f /root/vision-service/uti
   echo '  Removed.'
 fi
 
-# download the repo
-echo ">>> Downloading from $REPO_URL"
-wget -q "$REPO_URL/archive/refs/heads/$BRANCH.tar.gz" -O "$TMP_DIR/vision.tar.gz" || {
-  echo 'Error: Failed to download. Check your internet connection.'
+# download the repo — API mirror first (site NAT IPs get 429-banned by
+# GitHub under fleet probing; the droplet caches one copy for everyone),
+# GitHub direct as fallback. gzip -t so an HTML error page saved as
+# .tar.gz cleanly triggers the fallback instead of a confusing tar error.
+fetch_tarball() {
+  wget -q "$1" -O "$TMP_DIR/vision.tar.gz" && gzip -t "$TMP_DIR/vision.tar.gz" 2>/dev/null
+}
+echo ">>> Downloading vision-service ($BRANCH)"
+{ [ "$BRANCH" = "main" ] && fetch_tarball "https://api.insideoutgroup.co.uk/v1/sw/main.tar.gz"; } \
+  || fetch_tarball "$REPO_URL/archive/refs/heads/$BRANCH.tar.gz" || {
+  echo 'Error: Failed to download from mirror or GitHub. Check your internet connection.'
   rm -rf "$TMP_DIR"
   exit 1
 }
