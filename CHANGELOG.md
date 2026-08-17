@@ -22,6 +22,14 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.56 — 2026-08-17
+**Connector: Teleport feed id.** collect.sh also reports `cap_feed` — the
+feed id (e.g. `feq3stropy57`) grepped from the current boot's tssvc journal
+and cached in `$VISION_HOME/.teleport_feed` for long uptimes where the
+journal rotates. The dashboard uses it to show each device's latest captured
+image via Teleport frame-get (API key held server-side, never on devices or
+in browsers).
+
 ### v5.55 — 2026-08-17
 **Connector: Teleport capture pipeline status.** collect.sh parses the tssvc
 journal (`journalctl -u tssvc`, short-unix format) for the latest frame

@@ -104,8 +104,12 @@ godur_ms() {  # Go duration ("10m0s", "4.106s", "982ms", "1h2m3s") -> ms
 if [ "$(systemctl show tssvc -p LoadState --value 2>/dev/null)" = "loaded" ]; then
   echo "cap_svc=$(systemctl is-active tssvc 2>/dev/null)"
   # short-unix prefixes each line with epoch seconds — no timezone games.
-  jlog=$(journalctl -u tssvc -n 400 -o short-unix --no-pager 2>/dev/null)
-  [ -z "$jlog" ] && jlog=$(sudo -n journalctl -u tssvc -n 400 -o short-unix --no-pager 2>/dev/null)
+  JCTL="journalctl"
+  jlog=$($JCTL -u tssvc -n 400 -o short-unix --no-pager 2>/dev/null)
+  if [ -z "$jlog" ]; then
+    JCTL="sudo -n journalctl"
+    jlog=$($JCTL -u tssvc -n 400 -o short-unix --no-pager 2>/dev/null)
+  fi
   if [ -z "$jlog" ]; then
     echo "cap_log_error=journal_unreadable"
   else
@@ -137,6 +141,19 @@ if [ "$(systemctl show tssvc -p LoadState --value 2>/dev/null)" = "loaded" ]; th
     method=$(echo "$jlog" | grep -F 'captureMethod:' | tail -1 |
              sed 's/.*captureMethod: *//' | cut -c1-40)
     [ -n "$method" ] && echo "cap_method=$method"
+    # Teleport feed id (e.g. feq3stropy57) — appears in the journal near
+    # startup, so scan the whole current boot, and cache it in case the
+    # journal rotates it away on long-uptime devices. The dashboard uses it
+    # to show the latest captured image (frame-get, key held server-side).
+    FEED_CACHE="$VISION_HOME/.teleport_feed"
+    feed=$($JCTL -u tssvc -b -o cat --no-pager 2>/dev/null |
+           grep -oE '\bfe[a-z0-9]{10}\b' | tail -1)
+    if [ -n "$feed" ]; then
+      echo "$feed" > "$FEED_CACHE" 2>/dev/null
+    else
+      feed=$(cat "$FEED_CACHE" 2>/dev/null)
+    fi
+    [ -n "$feed" ] && echo "cap_feed=$feed"
   fi
 fi
 
