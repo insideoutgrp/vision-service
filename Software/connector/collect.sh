@@ -152,10 +152,28 @@ if [ "$(systemctl show tssvc -p LoadState --value 2>/dev/null)" = "loaded" ]; th
       [ -n "$fst" ] && echo "cap_shoot_ms=$(godur_ms "$fst")"
     fi
     up_line=$(echo "$jlog" | grep -F 'Up frm,' | tail -1)
+    up_epoch=""
     if [ -n "$up_line" ]; then
-      echo "cap_up_at=$(echo "$up_line" | awk '{printf "%d", $1}')"
+      up_epoch=$(echo "$up_line" | awk '{printf "%d", $1}')
+      echo "cap_up_at=$up_epoch"
       fut=$(echo "$up_line" | sed -n 's/.*FUT: \([^,]*\).*/\1/p')
       [ -n "$fut" ] && echo "cap_up_ms=$(godur_ms "$fut")"
+    fi
+    # Capture is REQUEST-driven: tssvc only takes pictures while the feed's
+    # capture request is active (e.g. site hours). "request not active" in
+    # the journal after the last upload means the station is online but
+    # deliberately idle — the dashboard shows that instead of "overdue",
+    # and the capture faults stand down.
+    req_line=$(echo "$jlog" | grep -i 'request not active' | tail -1)
+    if [ -n "$req_line" ]; then
+      req_epoch=$(echo "$req_line" | awk '{printf "%d", $1}')
+      if [ -z "$up_epoch" ] || [ "${req_epoch:-0}" -gt "$up_epoch" ]; then
+        echo "cap_request=inactive"
+      else
+        echo "cap_request=active"
+      fi
+    elif [ -n "$up_line" ]; then
+      echo "cap_request=active"
     fi
     method=$(echo "$jlog" | grep -F 'captureMethod:' | tail -1 |
              sed 's/.*captureMethod: *//' | cut -c1-40)

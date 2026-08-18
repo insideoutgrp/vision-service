@@ -22,6 +22,17 @@ interrupted deploy) is now healed in the idempotent pre-version-gate block —
 previously a deploy re-run exited "already at vX.Y" before the connector
 block and could not repair this state.
 
+### v5.61 / v4.57 — 2026-08-18
+**Connector: capture-request state.** tssvc only takes pictures while the
+feed's capture request is active; "request not active" in the journal
+(newer than the last upload) now reports `cap_request=inactive` — the
+dashboard shows "capture idle — not requested" instead of implying frames
+are overdue, and the capture faults stand down. Also fixes the misleading
+"captured 01:00 / uploaded 13:51" display: many stations upload frames
+without writing "Got frm" lines, so the upload time is now the headline
+last-image signal and the journal capture timestamp only shows when the
+two agree.
+
 ### v5.60 / v4.56 — 2026-08-17
 **Connector: OS-update backlog tracking.** Weekly `apt-get update`
 (backgrounded; the package-list refresh is the only data cost on metered
