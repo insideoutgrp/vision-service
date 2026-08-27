@@ -24,7 +24,7 @@ import yaml
 
 log = logging.getLogger("connector")
 
-AGENT_VERSION = "2.4"  # connector era: updates ride vision-service autoUpdate
+AGENT_VERSION = "2.5"  # connector era: updates ride vision-service autoUpdate
 # Fallback ingress: the dashboard host relays /v1/* to the API over a
 # different network path. Used only when the primary API is unreachable
 # at the connection level — survives a broken carrier<->DO route (the
@@ -36,6 +36,11 @@ HERE = Path(__file__).resolve().parent
 LOG_FILES = {"wittyPi.log", "schedule.log", "cameraSettings.log"}  # tail allowlist
 SHIP_LOG = "wittyPi.log"
 SHIP_MAX = 32 * 1024
+# v2.5: additional cached log sources — shipped as report["logs"] deltas and
+# stored per-source server-side (30-day cache) for the dashboard Logs viewer.
+SHIP_EXTRA_FILES = {"schedule": "schedule.log"}
+SHIP_JOURNALS = {"tssvc": "tssvc"}
+EXTRA_SHIP_MAX = 16 * 1024   # per source per report — metered SIMs pay per MB
 
 
 class Agent:
@@ -47,6 +52,7 @@ class Agent:
         self.interval = int(local.get("interval_s", 300))
         self.data_dir = Path(local.get("data_dir", "/var/lib/iovision"))
         self.spool = self.data_dir / "spool"
+        self._pending_offsets: dict = {}
         self.spool.mkdir(parents=True, exist_ok=True)
         self.fallback = str(local.get("fallback_url", FALLBACK_URL)).rstrip("/")
         self.session = requests.Session()
@@ -93,6 +99,18 @@ class Agent:
                 cam["snapshot_at"] = m.group(1)
             report["camera"] = cam
         report["log_delta"] = self._log_delta()
+        logs = {}
+        for src, fname in SHIP_EXTRA_FILES.items():
+            d = self._file_delta(self.vision_home / fname,
+                                 f"log_offset_{src}", EXTRA_SHIP_MAX)
+            if d:
+                logs[src] = d
+        for src, unit in SHIP_JOURNALS.items():
+            d = self._journal_delta(unit, f"log_since_{src}", EXTRA_SHIP_MAX)
+            if d:
+                logs[src] = d
+        if logs:
+            report["logs"] = logs
         # Network health piggybacked on our own traffic: timing of the previous
         # telemetry POST (continuous, costs nothing) and the latest micro
         # speed test (one-shot — reported once, not repeated every cycle).
@@ -121,12 +139,62 @@ class Agent:
         self._pending_offset = size
         return data.decode("utf-8", "replace")
 
+    def _file_delta(self, path: Path, state_name: str, cap: int) -> str:
+        """New bytes of a file since the last successful ship (per-source
+        offset state; committed only after the report lands)."""
+        if not path.exists():
+            return ""
+        state = self.data_dir / state_name
+        try:
+            offset = int(state.read_text())
+        except Exception:
+            offset = 0
+        size = path.stat().st_size
+        if size < offset:  # rotated/truncated
+            offset = 0
+        if size == offset:
+            return ""
+        with open(path, "rb") as f:
+            f.seek(max(offset, size - cap) if size - offset > cap else offset)
+            data = f.read(cap)
+        self._pending_offsets[state_name] = size
+        return data.decode("utf-8", "replace")
+
+    def _journal_delta(self, unit: str, state_name: str, cap: int) -> str:
+        """New journal lines for a unit since the last successful ship
+        (epoch state, 1s overlap; works back to old systemd — no
+        --cursor-file dependency)."""
+        state = self.data_dir / state_name
+        try:
+            since = int(float(state.read_text()))
+        except Exception:
+            since = int(time.time()) - 6 * 3600  # first ship: last 6h
+        argv = ["journalctl", "-u", unit, "--since", f"@{since}",
+                "-o", "short", "--no-pager"]
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=25)
+            if r.returncode != 0:
+                r = subprocess.run(["sudo", "-n"] + argv, capture_output=True,
+                                   text=True, timeout=25)
+        except Exception:
+            return ""
+        out = r.stdout or ""
+        if r.returncode != 0 or out.lstrip().startswith("-- No entries"):
+            out = ""
+        self._pending_offsets[state_name] = int(time.time()) - 1
+        return out[-cap:]
+
     def _commit_log_offset(self):
         off = getattr(self, "_pending_offset", None)
         if off is not None:
             tmp = self.data_dir / "log_offset.tmp"
             tmp.write_text(str(off))
             tmp.rename(self.data_dir / "log_offset")
+        for name, val in getattr(self, "_pending_offsets", {}).items():
+            tmp = self.data_dir / (name + ".tmp")
+            tmp.write_text(str(val))
+            tmp.rename(self.data_dir / name)
+        self._pending_offsets = {}
 
     def spool_report(self, report: dict) -> None:
         tmp = self.spool / f".{uuid.uuid4().hex}.tmp"
@@ -296,6 +364,13 @@ class Agent:
                     if " model='" in line:
                         snap = line
             return {"output": out[-500:], "snapshot": snap[-1500:]}
+        if ctype == "reboot":
+            # Detach + delay so the "done" result reaches the server before
+            # the box goes down. sudo -n covers a non-root agent; plain
+            # reboot covers root.
+            subprocess.Popen("sleep 20; sudo -n reboot 2>/dev/null || reboot",
+                             shell=True, start_new_session=True)
+            return {"ok": True, "note": "rebooting in ~20s"}
         if ctype == "update_agent":
             raise ValueError(
                 "update_agent is retired: the connector ships with vision-service "

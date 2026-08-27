@@ -12,6 +12,20 @@ have their own section at the end. Dates are commit dates.
 
 ---
 
+## v5.62 / v4.58 — 2026-08-26
+
+Connector 2.5 (both lines):
+
+- **Remote reboot**: new `reboot` command — queue an OS restart from the
+  dashboard's ✎ panel; the device confirms the command, then reboots ~20 s
+  later so the acknowledgement reaches the server first.
+- **Log cache**: alongside the existing wittyPi.log delta, each report now
+  ships new lines of `schedule.log` and the `tssvc` journal (16 KB/source
+  cap per report; journal tracked by epoch with 1 s overlap, no systemd
+  --cursor-file dependency so old OS images work). The server stores them
+  per-source for 30 days — browsable/searchable under Logs on the device
+  analytics page.
+
 ## Pi software
 
 ### deploy.sh connector healing — 2026-08-10
