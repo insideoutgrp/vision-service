@@ -24,7 +24,7 @@ import yaml
 
 log = logging.getLogger("connector")
 
-AGENT_VERSION = "2.5"  # connector era: updates ride vision-service autoUpdate
+AGENT_VERSION = "2.6"  # connector era: updates ride vision-service autoUpdate
 # Fallback ingress: the dashboard host relays /v1/* to the API over a
 # different network path. Used only when the primary API is unreachable
 # at the connection level — survives a broken carrier<->DO route (the
@@ -288,7 +288,22 @@ class Agent:
                 result = self.execute(cmd["type"], cmd.get("payload") or {})
                 status = "done"
             except Exception as e:
-                result, status = {"error": str(e)[:500]}, "failed"
+                # A camera busy with (or just released by) a tssvc capture
+                # reports an EMPTY choices list or refuses the USB claim, so
+                # a perfectly valid value "fails" (seen on Cam 106
+                # 2026-08-28: '8' rejected at 14:36, accepted on retry).
+                # One retry after 30s absorbs the collision.
+                if cmd["type"].startswith("camera_") and self._camera_transient(e):
+                    log.info("camera busy — retrying %s once in 30s", cmd["type"])
+                    time.sleep(30)
+                    try:
+                        result = self.execute(cmd["type"], cmd.get("payload") or {})
+                        status = "done"
+                    except Exception as e2:
+                        result, status = {"error": str(e2)[:500],
+                                          "retried": True}, "failed"
+                else:
+                    result, status = {"error": str(e)[:500]}, "failed"
             try:
                 self.request("POST", f"/v1/commands/{cmd['id']}/result",
                              json={"status": status, "result": result}, timeout=30)
@@ -297,6 +312,13 @@ class Agent:
         if getattr(self, "_restart_pending", False):
             log.info("agent updated — exiting for systemd to restart with new code")
             sys.exit(0)
+
+    @staticmethod
+    def _camera_transient(e: Exception) -> bool:
+        text = str(e)
+        return ("not an available choice" in text
+                or "Could not claim the USB device" in text
+                or "Could not claim interface" in text)
 
     def _vs(self, *argv, timeout=180) -> str:
         r = subprocess.run(list(argv), capture_output=True, text=True,

@@ -12,6 +12,15 @@ have their own section at the end. Dates are commit dates.
 
 ---
 
+## v5.63 / v4.59 — 2026-08-28
+
+Connector 2.6 (both lines):
+
+- **Camera-command retry**: a camera busy with (or just released by) a
+  tssvc capture can report an empty choices list or refuse the USB claim,
+  failing a perfectly valid `camera_set`. Camera commands now retry once
+  after 30 s when the failure matches those transient signatures.
+
 ## v5.62 / v4.58 — 2026-08-26
 
 Connector 2.5 (both lines):
