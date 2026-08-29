@@ -217,6 +217,24 @@ echo "sw_version=$(grep -m1 "SOFTWARE_VERSION=" utilities.sh 2>/dev/null | cut -
 [ -f .net_reboot_log ] && echo "net_reboot_last=$(tail -1 .net_reboot_log)"
 # Identify the active schedule by content hash — the server maps hash -> catalogue name.
 [ -f schedule.wpi ] && echo "schedule_md5=$(md5sum schedule.wpi | cut -d' ' -f1)"
+
+# Wake-path health markers (v5.64/v4.60): last occurrence of the bounce /
+# fallback / guaranteed-wake signatures in wittyPi.log, as epochs - the
+# server raises a warning when one fired recently, so the safety nets stop
+# being silent log lines. Bounded read: only the newest 256KB of the log.
+if [ -f wittyPi.log ]; then
+  wp_mark() {
+    line=$(tail -c 262144 wittyPi.log | grep -F "$1" | tail -1)
+    [ -n "$line" ] || return 0
+    ts=$(echo "$line" | sed -n 's/^\[\([0-9-]* [0-9:]*\)\].*/\1/p')
+    [ -n "$ts" ] || return 0
+    ep=$(date -d "$ts" +%s 2>/dev/null)
+    [ -n "$ep" ] && echo "$2=$ep"
+  }
+  wp_mark "TXD stayed HIGH" "wp_bounce_last"
+  wp_mark "applying fallback (now + 1 hour)" "wp_fallback_last"
+  wp_mark "guaranteed wake is triggered" "wp_gwake_last"
+fi
 # Latest camera settings snapshot (written daily by camera.sh logsettings).
 if [ -f cameraSettings.log ]; then
   echo "camera_snapshot=$(grep " model='" cameraSettings.log | tail -1)"

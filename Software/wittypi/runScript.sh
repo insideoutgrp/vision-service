@@ -232,8 +232,24 @@ if [ -f $schedule_file ]; then
               log 'Skip scheduling next shutdown, which should be done externally.'
             else
               if [ ! -z "$2" ] && [ $interrupted == 0 ] ; then
-                # schedule a shutdown 1 minute before next startup
-                setup_on_state $((check_time-duration-60))
+                # schedule a shutdown 1 minute before next startup.
+                # v5.64/v4.60: the revise arithmetic assumes we woke INSIDE
+                # this ON segment; a bounce boot inside an OFF window makes
+                # it produce a PAST time (Saltley 02 2026-08-29: alarms for
+                # yesterday, device slept with no valid wake until the +1h
+                # fallback). Only use it when genuinely in the future -
+                # otherwise fall through to the normal upcoming boundary.
+                revise_ts=$((check_time-duration-60))
+                eff_revise=$revise_ts
+                if [ $script_duration -gt 0 ] && [ $((script_duration % 86400)) -eq 0 ]; then
+                  eff_revise=$(dst_correct $begin $revise_ts)
+                fi
+                if [ $eff_revise -le $((cur_time + 60)) ]; then
+                  log 'Revise shutdown would be in the past - using the normal boundary instead.'
+                  setup_on_state $check_time
+                else
+                  setup_on_state $revise_ts
+                fi
               else
                 setup_on_state $check_time
               fi
@@ -243,10 +259,23 @@ if [ -f $schedule_file ]; then
               log 'Skip scheduling next startup, which should be done externally.'
             else
               if [ ! -z "$2" ] && [ $interrupted == 0 ] && [ $index != 0 ] ; then
-                # jump back to previous OFF state 
+                # jump back to previous OFF state
+                # v5.64/v4.60: same past-time guard as the ON branch - a
+                # bounce boot inside an OFF window jumped back a whole
+                # cycle, writing YESTERDAY's startup.
                 prev_state=${states[$((index-1))]}
                 prev_duration=$(extract_duration $prev_state)
-                setup_off_state $((check_time-duration-prev_duration))
+                revise_ts=$((check_time-duration-prev_duration))
+                eff_revise=$revise_ts
+                if [ $script_duration -gt 0 ] && [ $((script_duration % 86400)) -eq 0 ]; then
+                  eff_revise=$(dst_correct $begin $revise_ts)
+                fi
+                if [ $eff_revise -le $cur_time ]; then
+                  log 'Revise startup would be in the past - using the normal boundary instead.'
+                  setup_off_state $check_time
+                else
+                  setup_off_state $revise_ts
+                fi
               else
                 setup_off_state $check_time
               fi

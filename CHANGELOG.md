@@ -12,6 +12,22 @@ have their own section at the end. Dates are commit dates.
 
 ---
 
+## v5.64 / v4.60 — 2026-08-29
+
+Wake-path hardening after the Saltley 02 incident (bounce boot at the
+scheduled shutdown → revise wrote yesterday's alarms → device slept with
+no valid wake until the +1h fallback):
+
+- **runScript revise guard**: the interrupted-revise arithmetic assumes the
+  wake happened inside an ON segment; from inside an OFF window it jumped
+  back a whole cycle and produced past-dated alarms. Revise results are now
+  used only when genuinely in the future — otherwise the normal upcoming
+  boundary is written (for Saltley 02 that is exactly the correct wake).
+- **Wake-path telemetry markers**: collect.sh reports the last occurrence
+  of the bounce (TXD held HIGH), +1h fallback, and 24h guaranteed-wake
+  signatures from wittyPi.log; the server raises 48h warnings for each, so
+  the safety nets firing are dashboard issues instead of silent log lines.
+
 ## v5.63 / v4.59 — 2026-08-28
 
 Connector 2.6 (both lines):
