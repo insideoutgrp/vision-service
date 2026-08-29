@@ -1,0 +1,6 @@
+NOSCHEDULE
+# Always on - clears both Witty Pi alarms and leaves them clear.
+# The device never power-cycles itself; uptime is kept in check by the
+# connector's software high-uptime reboot (nightly once uptime > 24.5h),
+# which shows on the dashboard as "high uptime reboot".
+# For 24h-critical cameras where relying on Witty Pi alarms is a risk.

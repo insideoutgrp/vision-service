@@ -12,6 +12,21 @@ have their own section at the end. Dates are commit dates.
 
 ---
 
+## v5.65 / v4.61 — 2026-08-29
+
+Always-on support (connector 2.7):
+
+- **High-uptime software reboot**: past 24.5 h of uptime the agent reboots
+  the OS itself, inside the 01:00–04:59 local quiet window — 24 h-critical
+  cameras no longer depend on Witty Pi alarms to keep uptime in check. The
+  stamp is reported as `sw_reboot_last`; the dashboard labels the matching
+  0x0b boot "high uptime reboot". uptime_stuck (48 h) remains the alarm for
+  the mechanism failing.
+- **No_Schedule_Always_On.wpi**: new catalogue entry with a NOSCHEDULE
+  directive — runScript clears both alarm registers and leaves them clear
+  (the zero-startup fallback stands down when the shutdown alarm is also
+  zero, recognising deliberate always-on).
+
 ## v5.64 / v4.60 — 2026-08-29
 
 Wake-path hardening after the Saltley 02 incident (bounce boot at the

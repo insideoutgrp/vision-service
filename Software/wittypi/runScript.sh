@@ -142,6 +142,17 @@ setup_on_state()
 
 if [ -f $schedule_file ]; then
 
+  # v5.65/v4.61: explicit always-on. Clears both alarms and leaves them
+  # clear (utilities' zero-startup fallback stands down when the shutdown
+  # alarm is also zero). Uptime is kept in check by the agent's software
+  # high-uptime reboot instead of Witty Pi power cycling.
+  if grep -q '^NOSCHEDULE' $schedule_file ; then
+    log 'NOSCHEDULE: always-on - clearing scheduled startup and shutdown.'
+    clear_startup_time
+    clear_shutdown_time
+    exit
+  fi
+
   if [[ -z $(grep '[^[:space:]]' $schedule_file) ]] ; then
     log 'The schedule script file is empty, clear scheduled startup and shutdown time.'
     clear_startup_time

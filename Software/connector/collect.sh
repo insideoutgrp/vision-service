@@ -215,6 +215,9 @@ echo "sw_version=$(grep -m1 "SOFTWARE_VERSION=" utilities.sh 2>/dev/null | cut -
 # Last connectivity-watchdog reboot (checkInternet.sh stamps one line per
 # reboot, UTC) — lets the server attribute 0x0b boots to failed network pings.
 [ -f .net_reboot_log ] && echo "net_reboot_last=$(tail -1 .net_reboot_log)"
+# high-uptime software reboot stamp (agent 2.7) - UTC datetime of the last
+# agent-initiated reboot; dashboard labels the matching boot accordingly
+[ -f /var/lib/iovision/sw_reboot_last ] && echo "sw_reboot_last=$(cat /var/lib/iovision/sw_reboot_last)"
 # Identify the active schedule by content hash — the server maps hash -> catalogue name.
 [ -f schedule.wpi ] && echo "schedule_md5=$(md5sum schedule.wpi | cut -d' ' -f1)"
 

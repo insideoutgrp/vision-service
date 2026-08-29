@@ -148,7 +148,7 @@ if [ -z ${I2C_MC_ADDRESS+x} ]; then
 
   TIME_UNKNOWN=0
 
-  SOFTWARE_VERSION='5.64'
+  SOFTWARE_VERSION='5.65'
 
   readonly LOCAL_TZ='Europe/London'
 fi
@@ -620,10 +620,18 @@ verify_alarm_in_future()
 
   if [ "$raw" = "00 00:00:00" ]; then
     # zero shutdown alarm is fine (no scheduled shutdown); zero startup
-    # alarm needs a fallback so the device cycles eventually.
+    # alarm needs a fallback so the device cycles eventually - UNLESS the
+    # shutdown alarm is also zero: that is the deliberate always-on state
+    # (NOSCHEDULE), where no shutdown ever happens and a fallback wake
+    # would just re-arm alarms the operator cleared (v5.65/v4.61).
     if [ "$kind" = "startup" ]; then
-      log "WARN: startup alarm is zero - applying fallback (now + 1 hour)."
-      apply_fallback_alarm "startup"
+      local shut_raw=$(get_shutdown_time)
+      if [ "$shut_raw" = "00 00:00:00" ]; then
+        log "Both alarms are zero - always-on (NOSCHEDULE); leaving them clear."
+      else
+        log "WARN: startup alarm is zero - applying fallback (now + 1 hour)."
+        apply_fallback_alarm "startup"
+      fi
     fi
     return
   fi

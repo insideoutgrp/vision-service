@@ -24,7 +24,7 @@ import yaml
 
 log = logging.getLogger("connector")
 
-AGENT_VERSION = "2.6"  # connector era: updates ride vision-service autoUpdate
+AGENT_VERSION = "2.7"  # connector era: updates ride vision-service autoUpdate
 # Fallback ingress: the dashboard host relays /v1/* to the API over a
 # different network path. Used only when the primary API is unreachable
 # at the connection level — survives a broken carrier<->DO route (the
@@ -401,10 +401,42 @@ class Agent:
 
     # ---------------------------------------------------------- main loop
 
+    # High-uptime software reboot: 24h-critical (always-on) cameras no
+    # longer rely on the Witty Pi 24h_15m_Reboot schedule to keep uptime in
+    # check — once uptime passes ~24.5h the agent reboots the OS itself,
+    # inside the 01:00-04:59 local quiet window (duty-cycled devices are
+    # asleep then; weekend-24/7 units lose ~2 min of night frames). The
+    # UTC stamp is reported as sw_reboot_last so the dashboard shows the
+    # boot as "high uptime reboot". uptime_stuck (48h) remains the alarm
+    # for this mechanism failing.
+    UPTIME_REBOOT_S = 24.5 * 3600
+    REBOOT_HOURS = (1, 2, 3, 4)
+
+    def maybe_uptime_reboot(self) -> None:
+        try:
+            up = float(open("/proc/uptime").read().split()[0])
+        except Exception:
+            return
+        if up < self.UPTIME_REBOOT_S:
+            return
+        if time.localtime().tm_hour not in self.REBOOT_HOURS:
+            return
+        if time.time() - getattr(self, "_uptime_reboot_try", 0) < 1800:
+            return  # don't spam attempts if reboot is failing
+        self._uptime_reboot_try = time.time()
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        tmp = self.data_dir / "sw_reboot_last.tmp"
+        tmp.write_text(stamp)
+        tmp.rename(self.data_dir / "sw_reboot_last")
+        log.info("high-uptime reboot: %.1fh up - rebooting", up / 3600)
+        subprocess.Popen("sleep 5; sudo -n reboot 2>/dev/null || reboot",
+                         shell=True, start_new_session=True)
+
     def cycle(self) -> None:
         self.spool_report(self.collect())
         self.drain()
         self.maybe_speedtest()
+        self.maybe_uptime_reboot()
         self.run_commands()
 
     def run(self) -> None:
