@@ -499,6 +499,13 @@ interactive_menu()
 # successful (or first failed) run of the day a no-op, so short wake
 # windows still get their snapshot without hourly relay cycling.
 SETTINGS_LOG="$cur_dir/cameraSettings.log"
+# Heal power-cut corruption: NUL bytes make every grep of this log return
+# nothing ("binary file matches") — rotate the damaged file aside and start
+# clean so the snapshot pipeline recovers by itself.
+if [ -f "$SETTINGS_LOG" ] && ! tr -d '\000' < "$SETTINGS_LOG" | cmp -s - "$SETTINGS_LOG"; then
+  mv "$SETTINGS_LOG" "$SETTINGS_LOG.corrupt.$(date +%Y%m%d)" 2>/dev/null
+  log 'Camera: cameraSettings.log contained binary corruption - rotated aside, starting fresh.'
+fi
 SETTINGS_STAMP="$cur_dir/.camera_log_date"
 
 settings_log_line()
@@ -562,7 +569,7 @@ do_logsettings()
   stamp_today "$today"
   log 'Camera: daily settings snapshot written to cameraSettings.log.'
   # change detection vs the previous snapshot (ignore WARN/CHANGED lines)
-  local prev=$(grep " model='" "$SETTINGS_LOG" | tail -2 | head -1 | sed 's/^\[[^]]*\] //')
+  local prev=$(grep -a " model='" "$SETTINGS_LOG" | tr -d '\000' | tail -2 | head -1 | sed 's/^\[[^]]*\] //')
   if [ -n "$prev" ] && [ "$(echo "$prev" | sed "s/ shuttercount='[^']*'//;s/ battery='[^']*'//")" != "$pairs" ]; then
     local changed='' k pv cv
     for k in model lens $(param_names); do

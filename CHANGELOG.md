@@ -12,6 +12,15 @@ have their own section at the end. Dates are commit dates.
 
 ---
 
+## v5.66 / v4.62 — 2026-09-01
+
+- **cameraSettings.log corruption tolerance** (Jam Sandwich/ACS Stafford):
+  a power-cut mid-write can leave NUL bytes in the log; grep then treats it
+  as binary and every reader silently gets nothing — camera settings show
+  empty forever while camera and snapshots work fine. Readers now use
+  `grep -a | tr -d NUL`, and camera.sh rotates a corrupted log aside
+  before the daily snapshot so the pipeline heals itself.
+
 ## v5.65 / v4.61 — 2026-08-29
 
 Always-on support (connector 2.7):

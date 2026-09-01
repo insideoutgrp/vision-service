@@ -240,7 +240,10 @@ if [ -f wittyPi.log ]; then
 fi
 # Latest camera settings snapshot (written daily by camera.sh logsettings).
 if [ -f cameraSettings.log ]; then
-  echo "camera_snapshot=$(grep " model='" cameraSettings.log | tail -1)"
+  # -a + tr: a power-cut mid-write can leave NUL bytes in the log, making
+  # grep classify it as binary and emit nothing — the Jam Sandwich failure
+  # mode (camera fine, snapshot fine, parsing silently empty forever).
+  echo "camera_snapshot=$(grep -a " model='" cameraSettings.log | tr -d '\000' | tail -1)"
 fi
 
 LOCK=/var/lock/wittypi.i2c.lock
