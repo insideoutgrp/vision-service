@@ -386,7 +386,7 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
     echo ''
     echo '>>> Updating connector (iovision fleet module)'
     mkdir -p "$WITTYPI_DIR/connector"
-    for f in agent.py collect.sh vision-connector.service README.md; do
+    for f in agent.py collect.sh victron.py vision-connector.service README.md; do
       if [ -f "$SRC_DIR/connector/$f" ]; then
         cp "$SRC_DIR/connector/$f" "$WITTYPI_DIR/connector/$f.new"
         CONN_OK=1
@@ -408,6 +408,13 @@ if [ ! -z "$WITTYPI_DIR" ] && [ -f "$WITTYPI_DIR/utilities.sh" ]; then
     if ! python3 -c 'import requests, yaml' 2>/dev/null; then
       echo '  Installing connector dependencies (python3-requests python3-yaml)'
       apt install -y python3-requests python3-yaml || echo '  WARN: connector deps install failed - rerun deploy or install manually.'
+    fi
+    # v5.67: victron.py talks to BlueZ over D-Bus (both usually preinstalled
+    # on Raspberry Pi OS; without them the reader reports vic_fail and the
+    # rest of the connector is unaffected).
+    if ! python3 -c 'import dbus, gi' 2>/dev/null; then
+      echo '  Installing Victron reader dependencies (python3-dbus python3-gi)'
+      apt install -y python3-dbus python3-gi || echo '  WARN: python3-dbus/python3-gi install failed - Victron reads disabled until installed.'
     fi
     # Enrolled devices: migrate from the pre-v5.43 agent layout (iovision/
     # dir + iovision-agent.service) and (re)start the connector service so

@@ -24,7 +24,7 @@ import yaml
 
 log = logging.getLogger("connector")
 
-AGENT_VERSION = "2.7"  # connector era: updates ride vision-service autoUpdate
+AGENT_VERSION = "2.8"  # connector era: updates ride vision-service autoUpdate
 # Fallback ingress: the dashboard host relays /v1/* to the API over a
 # different network path. Used only when the primary API is unreachable
 # at the connection level — survives a broken carrier<->DO route (the
@@ -41,6 +41,9 @@ SHIP_MAX = 32 * 1024
 SHIP_EXTRA_FILES = {"schedule": "schedule.log"}
 SHIP_JOURNALS = {"tssvc": "tssvc"}
 EXTRA_SHIP_MAX = 16 * 1024   # per source per report — metered SIMs pay per MB
+# v2.8: nearby Victron solar charger over Bluetooth (victron.py, ~20 s per
+# cycle). Fleet-wide off switch from the server, cached across cycles.
+VICTRON_TIMEOUT = 75
 
 
 class Agent:
@@ -89,6 +92,7 @@ class Agent:
                     report[k.strip()] = v.strip()
         except Exception as e:
             report["collect_error"] = str(e)[:200]
+        report.update(self._victron())
         snap = report.pop("camera_snapshot", "")
         if snap:
             cam = dict(re.findall(r"(\w+)='([^']*)'", snap))
@@ -196,6 +200,38 @@ class Agent:
             tmp.rename(self.data_dir / name)
         self._pending_offsets = {}
 
+    def _victron(self) -> dict:
+        """vic_* fields from victron.py. Runs as root (BlueZ D-Bus); in the
+        field it switches Bluetooth on for the pass and off again, so the
+        power-save profile collect.sh applies stays in force."""
+        script = HERE / "victron.py"
+        try:
+            enabled = (self.data_dir / "victron_enabled").read_text().strip() != "0"
+        except OSError:
+            enabled = True
+        if not enabled or not script.exists():
+            return {}
+        argv = ["sudo", "-n", sys.executable, str(script),
+                "--state", str(self.data_dir / "victron.json")]
+        try:
+            if (self.vision_home / ".bench_state").read_text().strip() == "field":
+                argv.append("--field")
+        except OSError:
+            pass
+        try:
+            out = subprocess.run(argv, capture_output=True, text=True,
+                                 timeout=VICTRON_TIMEOUT).stdout
+        except subprocess.TimeoutExpired:
+            return {"vic_fail": "timeout"}
+        except Exception as e:
+            return {"vic_fail": str(e)[:80]}
+        found = {}
+        for line in out.splitlines():
+            if line.startswith("vic_") and "=" in line:
+                k, v = line.split("=", 1)
+                found[k.strip()] = v.strip()
+        return found
+
     def spool_report(self, report: dict) -> None:
         tmp = self.spool / f".{uuid.uuid4().hex}.tmp"
         tmp.write_text(json.dumps(report))
@@ -282,6 +318,13 @@ class Agent:
                 marker.unlink(missing_ok=True)
         except OSError as e:
             log.warning("update-approval marker: %s", e)
+        # Victron off switch (server setting); absent from older servers.
+        if "victron" in data:
+            try:
+                (self.data_dir / "victron_enabled").write_text(
+                    "1" if data["victron"] else "0")
+            except OSError as e:
+                log.warning("victron switch: %s", e)
         for cmd in commands:
             log.info("command %s: %s %s", cmd["id"], cmd["type"], cmd.get("payload"))
             try:

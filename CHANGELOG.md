@@ -12,6 +12,34 @@ have their own section at the end. Dates are commit dates.
 
 ---
 
+## v5.67 — 2026-11-17
+
+Victron solar charger readings (connector 2.8; v5 line only for now):
+
+- **New `connector/victron.py`**: each telemetry cycle scans ~8 s for
+  Victron Bluetooth adverts, connects to the nearest controller (sticky to
+  the one read last time while it's still heard), pairs with Victron's
+  default PIN 000000 on first contact, reads battery voltage/current, PV
+  voltage/current/power, yield today, charger state and error code over the
+  VE.Smart GATT protocol, and disconnects. ~20 s per cycle, no encryption
+  keys. Reported as `vic_*` telemetry fields; `vic_heard=0` means no Victron
+  controller is in range (evidence the camera isn't solar).
+- **Read-only**: only GET requests and the protocol's session keep-alive
+  are sent — charger settings are never written by the fleet.
+- **Power-save kept**: in the field, Bluetooth is switched on only for the
+  pass and off again afterwards.
+- Pairing that goes stale (three empty reads in a row on a connected,
+  paired unit) is dropped so the next pass re-pairs.
+- Deploy installs `python3-dbus` and `python3-gi` where missing.
+- Server setting `victron_enabled` switches the reader off fleet-wide
+  without a release.
+- Replaces the standalone VictronService `victrond` scanner on fleet
+  devices; that repo stays as the bench toolkit (pairing, settings writes).
+
+Proven on Barrow Luco (Pi 3B+, onboard mini-UART Bluetooth, bullseye):
+self-pairing, reads surviving a Pi reboot and a controller power cut, and
+field-mode Bluetooth on/off.
+
 ## v5.66 / v4.62 — 2026-09-01
 
 - **cameraSettings.log corruption tolerance** (Jam Sandwich/ACS Stafford):
