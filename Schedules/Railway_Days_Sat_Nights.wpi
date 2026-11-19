@@ -1,0 +1,18 @@
+# Railway: days Mon-Fri 07:00-17:00, plus Saturday night 21:00 - Sun 09:00
+# Cycle = 7 days = 168 hours (DST-corrected automatically).
+
+BEGIN	2022-01-03 07:00:00
+END	2030-01-01 00:00:00
+
+ON	H10		# Mon 07:00 - 17:00
+OFF	H14		# Mon 17:00 - Tue 07:00
+ON	H10		# Tue 07:00 - 17:00
+OFF	H14		# Tue 17:00 - Wed 07:00
+ON	H10		# Wed 07:00 - 17:00
+OFF	H14		# Wed 17:00 - Thu 07:00
+ON	H10		# Thu 07:00 - 17:00
+OFF	H14		# Thu 17:00 - Fri 07:00
+ON	H10		# Fri 07:00 - 17:00
+OFF	D1 H4		# Fri 17:00 - Sat 21:00
+ON	H12		# Sat 21:00 - Sun 09:00
+OFF	H22		# Sun 09:00 - Mon 07:00

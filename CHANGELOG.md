@@ -12,6 +12,14 @@ have their own section at the end. Dates are commit dates.
 
 ---
 
+## v5.68 — 2026-11-19
+
+New schedule **`Railway_Days_Sat_Nights.wpi`**: on Mon–Fri 07:00–17:00,
+plus Saturday 21:00 → Sunday 09:00 for weekend railway possessions. Off
+the rest of the time. 168-hour weekly cycle anchored on a Monday, so DST
+is handled like the other schedules. No code changes; deploy syncs it into
+each device's `schedules/` folder and the dashboard picker lists it.
+
 ## v5.67 — 2026-11-17
 
 Victron solar charger readings (connector 2.8; v5 line only for now):
